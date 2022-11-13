@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveAnyClass      #-}
-module Load (main,fromDiffTimeToSeconds)where
+module Load (main)where
 
 import Prelude
 import Network.HTTP.Client
