@@ -9,7 +9,7 @@
   },
   "api" : {
     "order-create" : {
-      "endpoint" : "https://sandbox.jusay.in/orders",
+      "endpoint" : "http://localhost:8081/orders",
       "method" : "POST",
       "contentType" : "JSON",
       "headers" : {

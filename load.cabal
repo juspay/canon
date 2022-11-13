@@ -45,6 +45,7 @@ library
     , case-insensitive
     , http-api-data
     , http-client
+    , http-client-tls
     , http-types
     , optics-core
     , random
@@ -72,6 +73,7 @@ executable load-exe
     , case-insensitive
     , http-api-data
     , http-client
+    , http-client-tls
     , http-types
     , load
     , optics-core
@@ -101,6 +103,7 @@ test-suite load-test
     , case-insensitive
     , http-api-data
     , http-client
+    , http-client-tls
     , http-types
     , load
     , optics-core

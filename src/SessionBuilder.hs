@@ -9,6 +9,7 @@ module SessionBuilder
   , ReqMethod(..)
   , ContentType(..)
   , ApiTemplate(..)
+  , SessionTemplate(..)
   )
   where
 

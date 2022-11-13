@@ -35,7 +35,7 @@ dependencies:
 - random
 - case-insensitive
 - http-api-data
-
+- http-client-tls
 ghc-options:
 - -Wall
 - -Wcompat
