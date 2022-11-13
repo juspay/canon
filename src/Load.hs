@@ -1,9 +1,8 @@
 {-# LANGUAGE DeriveAnyClass      #-}
-module Load (main)where
+module Load (main,fromDiffTimeToSeconds)where
 
 import Prelude
 import Network.HTTP.Client
--- import Data.Text
 import Data.ByteString.Lazy hiding (filter,elem,concat,length)
 import Control.Concurrent.Async
 import GHC.Generics
@@ -12,15 +11,11 @@ import Network.HTTP.Types
 import Data.Time.Clock.POSIX (getPOSIXTime, POSIXTime)
 import Data.Time.Clock (nominalDiffTimeToSeconds)
 import Data.Fixed
-import GHC.Float (int2Double)
+
 main :: IO ()
 main = do 
   res <- fn
   print res
-
-
-unFixed :: Fixed a -> Integer
-unFixed (MkFixed i) = i
 
 type WithLatency a = (a,POSIXTime)
 
@@ -31,8 +26,8 @@ data LoadReport =
     { totalRequest :: Int
     , successResponse :: Int
     , failureResponse :: Int
-    , rps :: Double
-    , avgLatency :: Double
+    , rps :: Pico
+    , avgLatency :: Pico
     }
     deriving (Show , Generic , ToJSON)
 
@@ -49,6 +44,8 @@ fn = do
   let req2 = requestMultiplier 1000 request1 []
 
   response <- withLatency $ runRequestParallely manager [req1,req2]
+  print $ length $ concat $ fst response
+  print $ nominalDiffTimeToSeconds $ snd response
   return $ show $ generateReport (fst response) (snd response)
 
 
@@ -59,15 +56,19 @@ generateReport responses totalTime =
     successResponses = filter ((200==) . statusCode . responseStatus . fst) $ concat responses
     successResponse = length successResponses
     failureResponse = totalRequest - successResponse
-    totalRequest = length $ concat responses
-    rps = (int2Double totalRequest)/(int2Double $ fromDiffTimeToSeconds totalTime)
+    totalRequest = length $ concat $ responses
+    rps = (toPico totalRequest)/(fromDiffTimeToSeconds totalTime)
     avgLatency = 
       let total = sum $ (fromDiffTimeToSeconds . snd) <$> successResponses
-      in (int2Double total) / (int2Double $ fromDiffTimeToSeconds totalTime)
+      in total / (toPico successResponse)
 
 
-fromDiffTimeToSeconds :: POSIXTime -> Int
-fromDiffTimeToSeconds = fromInteger . unFixed . nominalDiffTimeToSeconds
+
+toPico :: Int -> Pico
+toPico value = MkFixed $ ((toInteger value) * 1000000000000)
+
+fromDiffTimeToSeconds :: POSIXTime -> Pico
+fromDiffTimeToSeconds = nominalDiffTimeToSeconds
 
 requestMultiplier :: Int -> Request -> [Request] -> [Request]
 requestMultiplier 0 _ accVal = accVal

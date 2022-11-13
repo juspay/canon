@@ -28,6 +28,13 @@ dependencies:
 - http-types
 - time
 - aeson
+- aeson-pretty
+- unordered-containers
+- optics-core
+- attoparsec
+- random
+- case-insensitive
+- http-api-data
 
 ghc-options:
 - -Wall

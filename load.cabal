@@ -26,6 +26,8 @@ source-repository head
 library
   exposed-modules:
       Load
+      RequestBuilder
+      SessionBuilder
   other-modules:
       Paths_load
   hs-source-dirs:
@@ -35,13 +37,20 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson
+    , aeson-pretty
     , async
+    , attoparsec
     , base >=4.7 && <5
     , bytestring
+    , case-insensitive
+    , http-api-data
     , http-client
     , http-types
+    , optics-core
+    , random
     , text
     , time
+    , unordered-containers
   default-language: Haskell2010
 
 executable load-exe
@@ -55,14 +64,21 @@ executable load-exe
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
+    , aeson-pretty
     , async
+    , attoparsec
     , base >=4.7 && <5
     , bytestring
+    , case-insensitive
+    , http-api-data
     , http-client
     , http-types
     , load
+    , optics-core
+    , random
     , text
     , time
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite load-test
@@ -77,12 +93,19 @@ test-suite load-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
+    , aeson-pretty
     , async
+    , attoparsec
     , base >=4.7 && <5
     , bytestring
+    , case-insensitive
+    , http-api-data
     , http-client
     , http-types
     , load
+    , optics-core
+    , random
     , text
     , time
+    , unordered-containers
   default-language: Haskell2010

@@ -1,0 +1,26 @@
+{
+  "placeholder" : {
+    "order_id"  : "$randomId",
+    "api_key" : "vreojveooifvje",
+    "merchant_id" : "paypal",
+    "amount" : "$randomInt",
+    "txn_id"  : "@api~txns~response~txn_id",
+    "customer_id" : "ifjeojfo"
+  },
+  "api" : {
+    "order-create" : {
+      "endpoint" : "https://sandbox.jusay.in/orders",
+      "method" : "POST",
+      "contentType" : "JSON",
+      "headers" : {
+        "Authorization" : "#api_key",
+        "x-merchantid" : "#merchant_id"
+      },
+      "request" : {
+        "order_id" : "#order_id",
+        "amount" : "#amount",
+        "customer_id" : "#txn_id"
+      }
+    }
+  }
+}
