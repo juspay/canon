@@ -1,12 +1,15 @@
 {-# LANGUAGE DeriveAnyClass      #-}
-module Load (main)where
+module Load (main) where
 
 import Prelude
 import Network.HTTP.Client
-import Data.ByteString.Lazy hiding (filter,elem,concat,length)
+import Data.ByteString.Lazy hiding (filter,elem,concat,length,notElem)
+import qualified Data.List as Arr
 import Control.Concurrent.Async
 import GHC.Generics
 import Data.Aeson
+import Data.Maybe (fromMaybe)
+import qualified Data.Text as Text
 import Network.HTTP.Types
 import Data.Time.Clock.POSIX (getPOSIXTime, POSIXTime)
 import Data.Time.Clock (nominalDiffTimeToSeconds)
@@ -18,6 +21,8 @@ import qualified Data.HashMap.Strict as HMap
 import GHC.Stack (HasCallStack)
 import Data.Traversable (for)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Aeson.Key as KM
 
 main :: HasCallStack => IO ()
 main = do
@@ -102,3 +107,48 @@ toPico value = MkFixed $ ((toInteger value) * 1000000000000)
 
 fromDiffTimeToSeconds :: POSIXTime -> Pico
 fromDiffTimeToSeconds = nominalDiffTimeToSeconds
+
+
+decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> BS.ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
+decodeResponseToValue placeholder apiLabel response = do
+  case eitherDecodeStrict response of
+    Right (val :: Value) -> do
+      pure $ HMap.map (updateValuesInPlaceholder (apiLabel,val)) placeholder
+    Left err -> do 
+      print $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
+      pure placeholder
+
+-- Remove the replacement of # with mapping route in the api template
+updateValuesInPlaceholder :: (Text.Text , Value) -> SB.PlaceHolder -> SB.PlaceHolder
+updateValuesInPlaceholder _ (SB.Constant a) = SB.Constant a
+updateValuesInPlaceholder _ (SB.Command a) = error $ "Found command which was not expected in this portion of execution " <> (Text.unpack a)
+updateValuesInPlaceholder (apilabel , response) (SB.Mapping placeholder) = fromMaybe (SB.Mapping placeholder) $ do
+  (label , mapingRoute) <- Arr.uncons $ Arr.filter (`notElem` ["api","response"]) $ Text.splitOn "~" placeholder
+  if apilabel == label
+    then do
+      value <- digMap mapingRoute (Just response)
+      case value of
+        (String s) -> Just $ SB.Command s
+        _ -> Nothing
+    else
+      Nothing
+
+digMap :: [Text.Text] -> Maybe Value -> Maybe Value
+digMap _ Nothing = Nothing 
+digMap [] val = val
+digMap [x] (Just val) = lookUpFromObject x val 
+digMap (x : xs) (Just val) =  digMap xs $ lookUpFromObject x val 
+
+
+lookUpFromObject :: Text.Text -> Value -> Maybe Value
+lookUpFromObject key val =
+  case val of 
+    (Object v) -> KM.lookup (KM.fromText key) v
+    _ -> Nothing
+    
+makeValue :: Maybe Value
+makeValue =
+  let m = eitherDecodeStrict "{\n    \"txn_uuid\": \"euladAbdm8j6NxsoGQv\",\n    \"txn_id\": \"mxplayer-QC1668095957-1\",\n    \"status\": \"CHARGED\",\n    \"payment\": {\n        \"authentication\": {\n            \"url\": \"https://sandbox.juspay.in/v2/pay/finish/mxplayer/euladAbdm8j6NxsoGQv/QC1668095957\",\n            \"method\": \"GET\"\n        }\n    },\n    \"order_id\": \"QC1668095957\",\n    \"offer_details\": {\n        \"offers\": []\n    }\n}"
+  in case m of
+      Left _ -> Nothing
+      Right v -> Just v
