@@ -18,15 +18,16 @@ import Data.Maybe (fromMaybe)
 
 -- TODO: use placeholder
 buildRequest :: HMap.HashMap Text SB.PlaceHolder -> SB.ApiTemplate -> IO Client.Request
-buildRequest _placeholders apiTemplate  = do
-  baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint apiTemplate
+buildRequest placeholders apiTemplate  = do
+  baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint normalApiTemplate
   let newRequest = baseRequest { Client.method = fromReqMethod reqMethod , Client.requestHeaders = fromHeaders reqHeader}
   pure $ addBodyToRequest reqContentType reqBody newRequest
   where
-    reqMethod = SB.method apiTemplate
-    reqHeader = SB.headers apiTemplate
-    reqContentType = SB.contentType apiTemplate
-    reqBody = SB.request apiTemplate
+    reqMethod = SB.method normalApiTemplate
+    reqHeader = SB.headers normalApiTemplate
+    reqContentType = SB.contentType normalApiTemplate
+    reqBody = SB.request normalApiTemplate
+    normalApiTemplate = SB.normaliseApiData True placeholders apiTemplate
 
 
 fromReqMethod :: SB.ReqMethod -> ClientTypes.Method

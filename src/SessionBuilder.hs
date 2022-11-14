@@ -4,6 +4,7 @@ module SessionBuilder
   , randomInt
   , generateNewSession
   , loadSessionTemplate
+  , normaliseApiData
   , NormalisedSession(..)
   , PlaceHolder(..)
   , ReqMethod(..)
@@ -123,10 +124,10 @@ generateNewSession template = do
     placeHolderMap = placeholder template
     apiData = api template
     getNormalisedPlaceholder = mapM normaliseCommand placeHolderMap
-    getNormalisedApi normalisedPlaceholders = HMap.map (normaliseApiData normalisedPlaceholders) apiData
+    getNormalisedApi normalisedPlaceholders = HMap.map (normaliseApiData False normalisedPlaceholders) apiData
 
-normaliseApiData :: HMap.HashMap Text PlaceHolder ->  ApiTemplate -> ApiTemplate
-normaliseApiData placeholders apiTemplate = apiTemplate {headers = normalisedHeader , request = normalisedRequest}
+normaliseApiData :: Bool -> HMap.HashMap Text PlaceHolder ->  ApiTemplate -> ApiTemplate
+normaliseApiData failOnMappingPlaceholder placeholders apiTemplate = apiTemplate {headers = normalisedHeader , request = normalisedRequest}
   where
     normalisedHeader = HMap.map fillConstants (headers apiTemplate)
     normalisedRequest = HMap.map fillConstants (request apiTemplate)
@@ -137,7 +138,9 @@ normaliseApiData placeholders apiTemplate = apiTemplate {headers = normalisedHea
       case placeHolderValue of
         Just (Constant value) -> pure value
         Just (Command value)  -> error $ "Unexpected happed : " <> (Text.unpack value) <>  " Command was not normalised"
-        Just (Mapping value)  -> pure value
+        Just (Mapping value)  -> if failOnMappingPlaceholder 
+                                    then error $ "Found unresolved mapping placeholder " <> (Text.unpack value) 
+                                    else pure value
         Nothing -> error $ (Text.unpack placeholderLabel) <> " : not present"
 
     getPlaceholder :: Text -> Maybe Text

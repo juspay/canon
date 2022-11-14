@@ -10,7 +10,7 @@
   },
   "api" : {
     "order-create" : {
-      "endpoint" : "http://localhost:8081/orders",
+      "endpoint" : "https://sandbox.juspay.in/orders",
       "method" : "POST",
       "contentType" : "URLFORMENCODED",
       "headers" : {
@@ -27,7 +27,7 @@
       }
     },
     "txns" : {
-      "endpoint" : "http://localhost:8081/txns",
+      "endpoint" : "https://sandbox.juspay.in/txns",
       "method" : "POST",
       "contentType" : "URLFORMENCODED",
       "headers" : {
@@ -48,7 +48,7 @@
       }
     },
     "payStart" : {
-      "endpoint" : "#payStart",
+      "endpoint" : "https://sandbox.juspay.in/orders",
       "method" : "GET",
       "headers" : {
         "x-merchantid" : "#merchant_id"
@@ -56,7 +56,7 @@
       "request" : {}
     },
     "orderStatus" :  {
-      "endpoint" : "http://localhost:8081/orders/QC1668095957?options.add_full_gateway_response=true",
+      "endpoint" : "https://sandbox.juspay.in/orders/QC1668095957?options.add_full_gateway_response=true",
       "method" : "GET",
       "headers" : {
         "x-merchantid" : "#merchant_id"
