@@ -5,13 +5,14 @@
     "merchant_id" : "paypal",
     "amount" : "$randomInt",
     "txn_id"  : "@api~txns~response~txn_id",
-    "customer_id" : "ifjeojfo"
+    "customer_id" : "ifjeojfo",
+    "payStart" : "@api~txns~response~payment~authentication~url"
   },
   "api" : {
     "order-create" : {
       "endpoint" : "http://localhost:8081/orders",
       "method" : "POST",
-      "contentType" : "JSON",
+      "contentType" : "URLFORMENCODED",
       "headers" : {
         "Authorization" : "#api_key",
         "x-merchantid" : "#merchant_id"
@@ -19,8 +20,48 @@
       "request" : {
         "order_id" : "#order_id",
         "amount" : "#amount",
-        "customer_id" : "#txn_id"
+        "customer_id" : "#txn_id",
+        "currency" : "INR",
+        "customer_email" : "abc@ac.com",
+        "customer_phone" : "7899438420"
       }
+    },
+    "txns" : {
+      "endpoint" : "http://localhost:8081/txns",
+      "method" : "POST",
+      "contentType" : "URLFORMENCODED",
+      "headers" : {
+        "x-merchantid" : "#merchant_id"
+      },
+      "request" : {
+        "order_id" : "#order_id",
+        "merchant_id" : "#merchant_id",
+        "payment_method_type" : "CARD",
+        "payment_method" : "VISA",
+        "card_number" : "4111111111111111",
+        "card_exp_month" : "02",
+        "card_exp_year" : "25",
+        "name_on_card" : "testing",
+        "card_security_code" : "926",
+        "format" : "json",
+        "redirect_after_payment" : "true"
+      }
+    },
+    "payStart" : {
+      "endpoint" : "#payStart",
+      "method" : "GET",
+      "headers" : {
+        "x-merchantid" : "#merchant_id"
+      },
+      "request" : {}
+    },
+    "orderStatus" :  {
+      "endpoint" : "http://localhost:8081/orders/QC1668095957?options.add_full_gateway_response=true",
+      "method" : "GET",
+      "headers" : {
+        "x-merchantid" : "#merchant_id"
+      },
+      "request" : {}
     }
   }
 }
