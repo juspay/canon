@@ -117,7 +117,6 @@ loadSessionTemplate = eitherDecodeStrict
 generateNewSession :: HasCallStack => SessionTemplate -> IO NormalisedSession
 generateNewSession template = do
   normalisedPlaceholder <- getNormalisedPlaceholder
-  print $ normalisedPlaceholder
   let nomalisedApi = getNormalisedApi normalisedPlaceholder
   pure $ NormalisedSession
       { normalisedPlaceholder = normalisedPlaceholder
@@ -134,10 +133,11 @@ generateNewSession template = do
 
 
 normaliseApiData :: HasCallStack =>  Bool -> HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> (Text,ApiTemplate)
-normaliseApiData failOnMappingPlaceholder placeholders (apiLabel,apiTemplate) = (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest})
+normaliseApiData failOnMappingPlaceholder placeholders (apiLabel,apiTemplate) = (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest, endpoint = normalisedUrl})
   where
     normalisedHeader = HMap.map fillConstants (headers apiTemplate)
     normalisedRequest = HMap.map fillConstants (request apiTemplate)
+    normalisedUrl = fillConstants (endpoint apiTemplate)
 
     fillConstants val = fromMaybe val $ do 
       placeholderLabel <- getPlaceholder val

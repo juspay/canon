@@ -1,13 +1,13 @@
 {
   "placeholder" : {
     "order_id"  : "$randomId",
-    "api_key" : "Basic OTAxRDdDODI1NjM0ODg3OTg4RjBCRkVFNTM2OEYwOg==",
+    "api_key" : "Basic Oxxxxxxxxxxxxxxxxx==",
     "merchant_id" : "paypal",
     "amount" : "$randomInt",
     "customer_id" : "ifjeojfo",
-    "mappedOrderId" : "@api~order-create~response~order_id"
+    "payStartUrl" : "@api~txns~response~payment~authentication~url"
   },
-  "apiOrder" : ["order-create","txns"],
+  "apiOrder" : ["order-create","txns","payStart"],
   "api" : {
     "order-create" : {
       "endpoint" : "https://sandbox.juspay.in/orders",
@@ -35,7 +35,6 @@
       },
       "request" : {
         "order_id" : "#order_id",
-        "mapped_order_id" : "#mappedOrderId",
         "merchant_id" : "#merchant_id",
         "payment_method_type" : "CARD",
         "payment_method" : "VISA",
@@ -47,6 +46,14 @@
         "format" : "json",
         "redirect_after_payment" : "true"
       }
+    },
+    "payStart" : {
+      "endpoint" : "#payStartUrl",
+      "method" : "GET",
+      "headers" : {
+        "x-merchantid" : "#merchant_id"
+      },
+      "request" : {}
     }
   }
 }
