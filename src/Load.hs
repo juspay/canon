@@ -76,23 +76,24 @@ generateReport responses totalTime =
 -- TODO : Rework this 
 runRequestSeqentially :: Manager -> SB.NormalisedSession -> IO [ResponseAndLatency]
 runRequestSeqentially manager normalSession = do 
-  let sessionApiDataList = HMap.toList $ SB.generatedApiData normalSession
+  let sessionApiDataList = SB.generatedApiData normalSession
   go (SB.normalisedPlaceholder normalSession) sessionApiDataList []
   where
     go :: HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
     go _ [] acc = pure acc
-    go placeholder [(_,apiData)] acc = do
+    go placeholder [apiData] acc = do
       req <- RB.buildRequest placeholder apiData
       responseWithLatency <- runRequest manager req
       pure $ acc ++ [responseWithLatency]
     go placeholder ((apiLabel,apiData) : xs) acc = do 
-      req <- RB.buildRequest placeholder apiData
+      req <- RB.buildRequest placeholder (apiLabel,apiData)
       (response,latency) <- runRequest manager req
       updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
       go updatedPlaceHolder xs (acc ++ [(response,latency)])
 
 runRequestParallely :: Manager -> [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
-runRequestParallely manager normalSessions = mapConcurrently (runRequestSeqentially manager) normalSessions
+runRequestParallely manager normalSessions = do 
+  mapConcurrently (runRequestSeqentially manager) normalSessions
 
 runRequest :: Manager -> Request -> IO ResponseAndLatency
 runRequest manager req = do 
@@ -136,7 +137,7 @@ updateValuesInPlaceholder (apilabel , response) (SB.Mapping placeholder) = fromM
     then do
       value <- digMap mapingRoute (Just response)
       case value of
-        (String s) -> Just $ SB.Command s
+        (String s) -> Just $ SB.Constant s
         _ -> Nothing
     else
       Nothing

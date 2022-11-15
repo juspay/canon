@@ -31,18 +31,20 @@ import           Optics.Review (review)
 import Data.ByteString
 import System.Random (randomIO)
 import Data.Word (Word8)
+import GHC.Stack(HasCallStack)
 
 data SessionTemplate = 
     SessionTemplate
       { placeholder :: HMap.HashMap Text PlaceHolder
       , api :: HMap.HashMap Text ApiTemplate
+      , apiOrder :: [Text]
       }
     deriving (Generic, FromJSON,ToJSON, Show)
 
 data NormalisedSession = 
     NormalisedSession
       { normalisedPlaceholder :: HMap.HashMap Text PlaceHolder
-      , generatedApiData :: HMap.HashMap Text ApiTemplate
+      , generatedApiData :: [(Text,ApiTemplate)]
       }
     deriving (Generic, FromJSON,ToJSON, Show)
 
@@ -112,9 +114,10 @@ loadSessionTemplate :: ByteString -> Either String SessionTemplate
 loadSessionTemplate = eitherDecodeStrict
 
 
-generateNewSession :: SessionTemplate -> IO NormalisedSession
+generateNewSession :: HasCallStack => SessionTemplate -> IO NormalisedSession
 generateNewSession template = do
   normalisedPlaceholder <- getNormalisedPlaceholder
+  print $ normalisedPlaceholder
   let nomalisedApi = getNormalisedApi normalisedPlaceholder
   pure $ NormalisedSession
       { normalisedPlaceholder = normalisedPlaceholder
@@ -123,11 +126,15 @@ generateNewSession template = do
   where 
     placeHolderMap = placeholder template
     apiData = api template
+    apiOrdering = apiOrder template
     getNormalisedPlaceholder = mapM normaliseCommand placeHolderMap
-    getNormalisedApi normalisedPlaceholders = HMap.map (normaliseApiData False normalisedPlaceholders) apiData
+    getNormalisedApi normalisedPlaceholders = (normaliseApiData False normalisedPlaceholders) <$> orderedApiData
 
-normaliseApiData :: Bool -> HMap.HashMap Text PlaceHolder ->  ApiTemplate -> ApiTemplate
-normaliseApiData failOnMappingPlaceholder placeholders apiTemplate = apiTemplate {headers = normalisedHeader , request = normalisedRequest}
+    orderedApiData = (\apiLabel -> (apiLabel,fromJust $ HMap.lookup apiLabel apiData)) <$> apiOrdering
+
+
+normaliseApiData :: HasCallStack =>  Bool -> HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> (Text,ApiTemplate)
+normaliseApiData failOnMappingPlaceholder placeholders (apiLabel,apiTemplate) = (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest})
   where
     normalisedHeader = HMap.map fillConstants (headers apiTemplate)
     normalisedRequest = HMap.map fillConstants (request apiTemplate)

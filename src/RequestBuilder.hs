@@ -14,11 +14,12 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.CaseInsensitive as CI
 import Data.Aeson(encode)
 import Data.Maybe (fromMaybe)
+import GHC.Stack(HasCallStack)
 
 
 -- TODO: use placeholder
-buildRequest :: HMap.HashMap Text SB.PlaceHolder -> SB.ApiTemplate -> IO Client.Request
-buildRequest placeholders apiTemplate  = do
+buildRequest :: HasCallStack => HMap.HashMap Text SB.PlaceHolder -> (Text,SB.ApiTemplate) -> IO Client.Request
+buildRequest placeholders (apiLabel,apiTemplate)  = do
   baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint normalApiTemplate
   let newRequest = baseRequest { Client.method = fromReqMethod reqMethod , Client.requestHeaders = fromHeaders reqHeader}
   pure $ addBodyToRequest reqContentType reqBody newRequest
@@ -27,7 +28,7 @@ buildRequest placeholders apiTemplate  = do
     reqHeader = SB.headers normalApiTemplate
     reqContentType = SB.contentType normalApiTemplate
     reqBody = SB.request normalApiTemplate
-    normalApiTemplate = SB.normaliseApiData True placeholders apiTemplate
+    normalApiTemplate = snd $ SB.normaliseApiData True placeholders (apiLabel,apiTemplate)
 
 
 fromReqMethod :: SB.ReqMethod -> ClientTypes.Method

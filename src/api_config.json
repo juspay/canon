@@ -4,10 +4,10 @@
     "api_key" : "Basic OTAxRDdDODI1NjM0ODg3OTg4RjBCRkVFNTM2OEYwOg==",
     "merchant_id" : "paypal",
     "amount" : "$randomInt",
-    "txn_id"  : "@api~txns~response~txn_id",
     "customer_id" : "ifjeojfo",
     "mappedOrderId" : "@api~order-create~response~order_id"
   },
+  "apiOrder" : ["order-create","txns"],
   "api" : {
     "order-create" : {
       "endpoint" : "https://sandbox.juspay.in/orders",
@@ -20,7 +20,7 @@
       "request" : {
         "order_id" : "#order_id",
         "amount" : "#amount",
-        "customer_id" : "#txn_id",
+        "customer_id" : "#customer_id",
         "currency" : "INR",
         "customer_email" : "abc@ac.com",
         "customer_phone" : "7899438420"
@@ -47,22 +47,6 @@
         "format" : "json",
         "redirect_after_payment" : "true"
       }
-    },
-    "payStart" : {
-      "endpoint" : "https://sandbox.juspay.in/orders",
-      "method" : "GET",
-      "headers" : {
-        "x-merchantid" : "#merchant_id"
-      },
-      "request" : {}
-    },
-    "orderStatus" :  {
-      "endpoint" : "https://sandbox.juspay.in/orders/QC1668095957?options.add_full_gateway_response=true",
-      "method" : "GET",
-      "headers" : {
-        "x-merchantid" : "#merchant_id"
-      },
-      "request" : {}
     }
   }
 }
