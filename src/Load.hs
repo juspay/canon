@@ -19,7 +19,6 @@ import qualified SessionBuilder as SB
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HMap
 import GHC.Stack (HasCallStack)
-import Data.Traversable (for)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as KM
@@ -74,14 +73,23 @@ generateReport responses totalTime =
       let total = sum $ (fromDiffTimeToSeconds . snd) <$> successResponses
       in total
 
--- TODO : add logic to update the non-constant placeholders based on the response from each req incrementally
+-- TODO : Rework this 
 runRequestSeqentially :: Manager -> SB.NormalisedSession -> IO [ResponseAndLatency]
 runRequestSeqentially manager normalSession = do 
-  let sessionApiData = HMap.toList $ SB.generatedApiData normalSession
-  for sessionApiData $ \(apiLabel,apiData) -> do
-      print apiLabel
-      req <- RB.buildRequest (SB.normalisedPlaceholder normalSession) apiData
-      runRequest manager req
+  let sessionApiDataList = HMap.toList $ SB.generatedApiData normalSession
+  go (SB.normalisedPlaceholder normalSession) sessionApiDataList []
+  where
+    go :: HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
+    go _ [] acc = pure acc
+    go placeholder [(_,apiData)] acc = do
+      req <- RB.buildRequest placeholder apiData
+      responseWithLatency <- runRequest manager req
+      pure $ acc ++ [responseWithLatency]
+    go placeholder ((apiLabel,apiData) : xs) acc = do 
+      req <- RB.buildRequest placeholder apiData
+      (response,latency) <- runRequest manager req
+      updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
+      go updatedPlaceHolder xs (acc ++ [(response,latency)])
 
 runRequestParallely :: Manager -> [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
 runRequestParallely manager normalSessions = mapConcurrently (runRequestSeqentially manager) normalSessions
@@ -109,9 +117,9 @@ fromDiffTimeToSeconds :: POSIXTime -> Pico
 fromDiffTimeToSeconds = nominalDiffTimeToSeconds
 
 
-decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> BS.ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
+decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
 decodeResponseToValue placeholder apiLabel response = do
-  case eitherDecodeStrict response of
+  case eitherDecodeStrict $ toStrict response of
     Right (val :: Value) -> do
       pure $ HMap.map (updateValuesInPlaceholder (apiLabel,val)) placeholder
     Left err -> do 
@@ -146,9 +154,9 @@ lookUpFromObject key val =
     (Object v) -> KM.lookup (KM.fromText key) v
     _ -> Nothing
     
-makeValue :: Maybe Value
-makeValue =
-  let m = eitherDecodeStrict "{\n    \"txn_uuid\": \"euladAbdm8j6NxsoGQv\",\n    \"txn_id\": \"mxplayer-QC1668095957-1\",\n    \"status\": \"CHARGED\",\n    \"payment\": {\n        \"authentication\": {\n            \"url\": \"https://sandbox.juspay.in/v2/pay/finish/mxplayer/euladAbdm8j6NxsoGQv/QC1668095957\",\n            \"method\": \"GET\"\n        }\n    },\n    \"order_id\": \"QC1668095957\",\n    \"offer_details\": {\n        \"offers\": []\n    }\n}"
-  in case m of
-      Left _ -> Nothing
-      Right v -> Just v
+-- makeValue :: Maybe Value
+-- makeValue =
+--   let m = eitherDecodeStrict "{\n    \"txn_uuid\": \"euladAbdm8j6NxsoGQv\",\n    \"txn_id\": \"mxplayer-QC1668095957-1\",\n    \"status\": \"CHARGED\",\n    \"payment\": {\n        \"authentication\": {\n            \"url\": \"https://sandbox.juspay.in/v2/pay/finish/mxplayer/euladAbdm8j6NxsoGQv/QC1668095957\",\n            \"method\": \"GET\"\n        }\n    },\n    \"order_id\": \"QC1668095957\",\n    \"offer_details\": {\n        \"offers\": []\n    }\n}"
+--   in case m of
+--       Left _ -> Nothing
+--       Right v -> Just v

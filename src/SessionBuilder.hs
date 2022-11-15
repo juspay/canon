@@ -99,7 +99,7 @@ placeHolderText = prism' out into
     -- Parse a mapping placeholder and append `~` in the begining for easy identification
     parseMapping = do
       _ <- char ('@')
-      (Mapping . ("~" <>)) <$> takeText
+      Mapping <$> takeText
     -- Parse a constant value
     parseConstant = do
       Constant <$> takeText
@@ -140,7 +140,7 @@ normaliseApiData failOnMappingPlaceholder placeholders apiTemplate = apiTemplate
         Just (Command value)  -> error $ "Unexpected happed : " <> (Text.unpack value) <>  " Command was not normalised"
         Just (Mapping value)  -> if failOnMappingPlaceholder 
                                     then error $ "Found unresolved mapping placeholder " <> (Text.unpack value) 
-                                    else pure value
+                                    else Nothing
         Nothing -> error $ (Text.unpack placeholderLabel) <> " : not present"
 
     getPlaceholder :: Text -> Maybe Text
