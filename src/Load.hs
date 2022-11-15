@@ -23,6 +23,7 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as KM
 
+
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"

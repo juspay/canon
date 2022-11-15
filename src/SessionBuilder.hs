@@ -32,6 +32,7 @@ import Data.ByteString
 import System.Random (randomIO)
 import Data.Word (Word8)
 import GHC.Stack(HasCallStack)
+import qualified Data.UUID as UUID
 
 data SessionTemplate = 
     SessionTemplate
@@ -163,8 +164,10 @@ normaliseCommand a = pure a
 runCommand :: Text -> IO Text
 runCommand = \case
   "randomInt" -> Text.pack . show <$> randomInt
-  -- TODO: add logic for random string
-  "randomId" -> pure "shubhanshu"
+  "randomId" -> do
+    uuid <- UUID.toText <$> randomUUID
+    pure $ Text.take 6 $ Text.filter (/='-') uuid
+
   a -> error $ (Text.unpack a) <> " is not a valid command"
 
 
@@ -175,3 +178,6 @@ randomInt = makeNatual <$> randomIO
     makeNatual a | a < 0 = (a * (-1)) `mod` 10000
                  | a == 0 = 1 
                  | otherwise = a `mod` 10000   
+
+randomUUID :: IO UUID.UUID
+randomUUID = randomIO

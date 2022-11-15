@@ -36,6 +36,7 @@ dependencies:
 - case-insensitive
 - http-api-data
 - http-client-tls
+- uuid
 ghc-options:
 - -Wall
 - -Wcompat
