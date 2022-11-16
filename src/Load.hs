@@ -28,7 +28,7 @@ import qualified Control.Exception as Ex
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 15
+  let sessionCount = 5
   let sessionTemplate = fromRightErr $ SB.loadSessionTemplate res
   result <- loadRunner sessionCount sessionTemplate
   print result
@@ -69,10 +69,10 @@ generateReport responses totalTime =
     successResponse = length successResponses
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
-    rps = (toPico totalRequest)
+    rps = (toPico totalRequest)/(fromDiffTimeToSeconds totalTime)
     avgLatency = 
       let total = sum $ (fromDiffTimeToSeconds . snd) <$> successResponses
-      in total
+      in total/(fromDiffTimeToSeconds totalTime)
 
 -- TODO : Rework this 
 runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]

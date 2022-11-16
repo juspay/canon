@@ -172,9 +172,6 @@ normaliseApiData placeholders (apiLabel,apiTemplate) = do
         Just (Constant value) -> pure value
         Just (Command value)  -> Left $ CommandNotNormalised $ "Unexpected happed : " <> value <>  " Command was not normalised"
         Just (Mapping value)  -> Left $ MapperFound $ "Found unresolved mapping placeholder " <> value
-                                  -- if failOnMappingPlaceholder 
-                                  --   then error $ "Found unresolved mapping placeholder " <> (Text.unpack value) 
-                                  --   else Nothing
         Nothing -> Left $ PlaceholderNotFound $ placeholderLabel <> " : not present"
 
     getPlaceholder :: Text -> Either ConversionError Text
