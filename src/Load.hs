@@ -22,7 +22,8 @@ import GHC.Stack (HasCallStack)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as KM
-
+import Control.Monad.Trans.Either
+import qualified Control.Exception as Ex
 
 main :: HasCallStack => IO ()
 main = do
@@ -83,22 +84,37 @@ runRequestSeqentially manager normalSession = do
     go :: HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
     go _ [] acc = pure acc
     go placeholder [apiData] acc = do
-      req <- RB.buildRequest placeholder apiData
-      responseWithLatency <- runRequest manager req
-      pure $ acc ++ [responseWithLatency]
+      eitherResponseWithLatency <- buildAndRunRequest placeholder apiData manager
+      case eitherResponseWithLatency of
+        Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
+        Left err -> do 
+          print $ show err
+          pure $ acc
     go placeholder ((apiLabel,apiData) : xs) acc = do 
-      req <- RB.buildRequest placeholder (apiLabel,apiData)
-      (response,latency) <- runRequest manager req
-      updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
-      go updatedPlaceHolder xs (acc ++ [(response,latency)])
+      eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
+      case eitherResponseWithLatency of
+          Right (response,latency) -> do
+            updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
+            go updatedPlaceHolder xs (acc ++ [(response,latency)])
+          Left err -> do
+            print $ show err
+            go placeholder xs acc
+      
 
 runRequestParallely :: Manager -> [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
 runRequestParallely manager normalSessions = do 
   mapConcurrently (runRequestSeqentially manager) normalSessions
 
-runRequest :: Manager -> Request -> IO ResponseAndLatency
+buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Manager -> IO (Either SB.ConversionError ResponseAndLatency)
+buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
+  req <- newEitherT $ RB.buildRequest placeholder apiTemplate
+  responseWithLatency <- newEitherT $ runRequest manager req
+  pure responseWithLatency
+
+runRequest :: Manager -> Request -> IO (Either SB.ConversionError ResponseAndLatency)
 runRequest manager req = do 
-  withLatency $ httpLbs req manager
+  (eitherResponse :: Either Ex.SomeException ResponseAndLatency) <- Ex.try (withLatency $ httpLbs req manager)
+  pure $ either (Left . SB.HttpException) (Right) eitherResponse
 
 withLatency :: IO a -> IO (a,POSIXTime)
 withLatency action = do

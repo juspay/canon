@@ -37,6 +37,7 @@ dependencies:
 - http-api-data
 - http-client-tls
 - uuid
+- transformers-either
 ghc-options:
 - -Wall
 - -Wcompat

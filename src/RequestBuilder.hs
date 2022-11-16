@@ -14,22 +14,16 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.CaseInsensitive as CI
 import Data.Aeson(encode)
 import Data.Maybe (fromMaybe)
-import GHC.Stack(HasCallStack)
 
-
--- TODO: use placeholder
-buildRequest :: HasCallStack => HMap.HashMap Text SB.PlaceHolder -> (Text,SB.ApiTemplate) -> IO Client.Request
+buildRequest :: HMap.HashMap Text SB.PlaceHolder -> (Text,SB.ApiTemplate) -> IO (Either SB.ConversionError Client.Request)
 buildRequest placeholders (apiLabel,apiTemplate)  = do
-  baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint normalApiTemplate
-  let newRequest = baseRequest { Client.method = fromReqMethod reqMethod , Client.requestHeaders = fromHeaders reqHeader}
-  pure $ addBodyToRequest reqContentType reqBody newRequest
-  where
-    reqMethod = SB.method normalApiTemplate
-    reqHeader = SB.headers normalApiTemplate
-    reqContentType = SB.contentType normalApiTemplate
-    reqBody = SB.request normalApiTemplate
-    normalApiTemplate = snd $ SB.normaliseApiData True placeholders (apiLabel,apiTemplate)
-
+  let eitherNormalisedApiData  = SB.normaliseApiData placeholders (apiLabel,apiTemplate)
+  case eitherNormalisedApiData of
+    Right (_,normalApiTemplate) -> do
+      baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint normalApiTemplate
+      let newRequest = baseRequest { Client.method = fromReqMethod $ SB.method normalApiTemplate , Client.requestHeaders = fromHeaders $ SB.headers normalApiTemplate}
+      pure $ Right $ addBodyToRequest (SB.contentType normalApiTemplate) (SB.request normalApiTemplate) newRequest
+    Left err -> pure $ Left err
 
 fromReqMethod :: SB.ReqMethod -> ClientTypes.Method
 fromReqMethod SB.POST = ClientTypes.methodPost

@@ -11,6 +11,7 @@ module SessionBuilder
   , ContentType(..)
   , ApiTemplate(..)
   , SessionTemplate(..)
+  , ConversionError(..)
   )
   where
 
@@ -33,6 +34,7 @@ import System.Random (randomIO)
 import Data.Word (Word8)
 import GHC.Stack(HasCallStack)
 import qualified Data.UUID as UUID
+import qualified Control.Exception as Ex
 
 data SessionTemplate = 
     SessionTemplate
@@ -128,32 +130,62 @@ generateNewSession template = do
     apiData = api template
     apiOrdering = apiOrder template
     getNormalisedPlaceholder = mapM normaliseCommand placeHolderMap
-    getNormalisedApi normalisedPlaceholders = (normaliseApiData False normalisedPlaceholders) <$> orderedApiData
+    getNormalisedApi normalisedPlaceholders = (runNormaliseApiData normalisedPlaceholders) <$> orderedApiData
 
     orderedApiData = (\apiLabel -> (apiLabel,fromJust $ HMap.lookup apiLabel apiData)) <$> apiOrdering
 
+data ConversionError = 
+    NotAPlaceholder
+  | CommandNotNormalised Text
+  | MapperFound Text
+  | PlaceholderNotFound Text
+  | HttpException Ex.SomeException
+  deriving (Show)
 
-normaliseApiData :: HasCallStack =>  Bool -> HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> (Text,ApiTemplate)
-normaliseApiData failOnMappingPlaceholder placeholders (apiLabel,apiTemplate) = (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest, endpoint = normalisedUrl})
+runNormaliseApiData :: HasCallStack => HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> (Text,ApiTemplate)
+runNormaliseApiData placeholders (apiLabel,apiTemplate) = 
+  let normalisedData = normaliseApiData placeholders (apiLabel,apiTemplate)
+  in resolveEither normalisedData
   where
-    normalisedHeader = HMap.map fillConstants (headers apiTemplate)
-    normalisedRequest = HMap.map fillConstants (request apiTemplate)
-    normalisedUrl = fillConstants (endpoint apiTemplate)
+    resolveEither :: Either ConversionError (Text,ApiTemplate) -> (Text,ApiTemplate)
+    resolveEither eitherVal = 
+      case eitherVal of
+        Right val -> val
+        Left NotAPlaceholder -> (apiLabel,apiTemplate)
+        Left (CommandNotNormalised err) -> error $ Text.unpack err
+        Left (MapperFound _) -> (apiLabel,apiTemplate)
+        Left (PlaceholderNotFound err) -> error $ Text.unpack err
+        Left (HttpException err) -> error $ show err
 
-    fillConstants val = fromMaybe val $ do 
+normaliseApiData :: HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> Either ConversionError (Text,ApiTemplate)
+normaliseApiData placeholders (apiLabel,apiTemplate) = do 
+  normalisedHeader <- mapM fillConstants (headers apiTemplate)
+  normalisedRequest <- mapM fillConstants (request apiTemplate)
+  normalisedUrl <- fillConstants (endpoint apiTemplate)
+  pure $ (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest, endpoint = normalisedUrl})
+  where
+    fillConstants :: Text -> Either ConversionError Text
+    fillConstants val = resolveNotAPlaceholder val $ do --fromMaybe val $ do 
       placeholderLabel <- getPlaceholder val
       let placeHolderValue = HMap.lookup placeholderLabel placeholders
       case placeHolderValue of
         Just (Constant value) -> pure value
-        Just (Command value)  -> error $ "Unexpected happed : " <> (Text.unpack value) <>  " Command was not normalised"
-        Just (Mapping value)  -> if failOnMappingPlaceholder 
-                                    then error $ "Found unresolved mapping placeholder " <> (Text.unpack value) 
-                                    else Nothing
-        Nothing -> error $ (Text.unpack placeholderLabel) <> " : not present"
+        Just (Command value)  -> Left $ CommandNotNormalised $ "Unexpected happed : " <> value <>  " Command was not normalised"
+        Just (Mapping value)  -> Left $ MapperFound $ "Found unresolved mapping placeholder " <> value
+                                  -- if failOnMappingPlaceholder 
+                                  --   then error $ "Found unresolved mapping placeholder " <> (Text.unpack value) 
+                                  --   else Nothing
+        Nothing -> Left $ PlaceholderNotFound $ placeholderLabel <> " : not present"
 
-    getPlaceholder :: Text -> Maybe Text
-    getPlaceholder "" = Nothing
-    getPlaceholder a = if (Text.head a == '#') then Just $ Text.tail a else Nothing
+    getPlaceholder :: Text -> Either ConversionError Text
+    getPlaceholder "" = Left $ NotAPlaceholder
+    getPlaceholder a = if (Text.head a == '#') then Right $ Text.tail a else Left $ NotAPlaceholder
+
+    resolveNotAPlaceholder :: Text ->  Either ConversionError Text -> Either ConversionError Text
+    resolveNotAPlaceholder defValue eitherVal = 
+      case eitherVal of
+        (Left NotAPlaceholder) -> Right defValue
+        a -> a
 
 
 

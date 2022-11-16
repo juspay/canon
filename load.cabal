@@ -51,6 +51,7 @@ library
     , random
     , text
     , time
+    , transformers-either
     , unordered-containers
     , uuid
   default-language: Haskell2010
@@ -81,6 +82,7 @@ executable load-exe
     , random
     , text
     , time
+    , transformers-either
     , unordered-containers
     , uuid
   default-language: Haskell2010
@@ -112,6 +114,7 @@ test-suite load-test
     , random
     , text
     , time
+    , transformers-either
     , unordered-containers
     , uuid
   default-language: Haskell2010
