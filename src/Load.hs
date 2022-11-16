@@ -28,10 +28,9 @@ import qualified Control.Exception as Ex
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 1
+  let sessionCount = 15
   let sessionTemplate = fromRightErr $ SB.loadSessionTemplate res
-  manager <- newManager tlsManagerSettings 
-  result <- loadRunner manager sessionCount sessionTemplate
+  result <- loadRunner sessionCount sessionTemplate
   print result
 
 type WithLatency a = (a,POSIXTime)
@@ -48,10 +47,10 @@ data LoadReport =
     }
     deriving (Show , Generic , ToJSON)
 
-loadRunner :: Manager -> Int -> SB.SessionTemplate -> IO String
-loadRunner manager sessionCount sessionTemplate = do
+loadRunner :: Int -> SB.SessionTemplate -> IO String
+loadRunner sessionCount sessionTemplate = do
   requestsForSession <- makeSessions sessionCount sessionTemplate
-  response <- withLatency $ runRequestParallely manager requestsForSession
+  response <- withLatency $ runRequestParallely requestsForSession
   return $ show $ generateReport (fst response) (snd response)
 
 makeSessions :: Int -> SB.SessionTemplate ->  IO [SB.NormalisedSession]
@@ -76,39 +75,43 @@ generateReport responses totalTime =
       in total
 
 -- TODO : Rework this 
-runRequestSeqentially :: Manager -> SB.NormalisedSession -> IO [ResponseAndLatency]
-runRequestSeqentially manager normalSession = do 
+runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
+runRequestSeqentially normalSession = do 
+  manager <- newManager tlsManagerSettings 
   let sessionApiDataList = SB.generatedApiData normalSession
-  go (SB.normalisedPlaceholder normalSession) sessionApiDataList []
+  go manager (SB.normalisedPlaceholder normalSession) sessionApiDataList []
   where
-    go :: HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
-    go _ [] acc = pure acc
-    go placeholder [apiData] acc = do
+    go :: Manager -> HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
+    go _ _ [] acc = pure acc
+    go manager placeholder [apiData] acc = do
       eitherResponseWithLatency <- buildAndRunRequest placeholder apiData manager
+      print $ show eitherResponseWithLatency
       case eitherResponseWithLatency of
         Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
         Left err -> do 
           print $ show err
           pure $ acc
-    go placeholder ((apiLabel,apiData) : xs) acc = do 
+    go manager placeholder ((apiLabel,apiData) : xs) acc = do 
       eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
+      print $ show eitherResponseWithLatency
       case eitherResponseWithLatency of
           Right (response,latency) -> do
             updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
-            go updatedPlaceHolder xs (acc ++ [(response,latency)])
+            go manager updatedPlaceHolder xs (acc ++ [(response,latency)])
           Left err -> do
             print $ show err
-            go placeholder xs acc
+            go manager placeholder xs acc
       
 
-runRequestParallely :: Manager -> [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
-runRequestParallely manager normalSessions = do 
-  mapConcurrently (runRequestSeqentially manager) normalSessions
+runRequestParallely :: [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
+runRequestParallely normalSessions = do 
+  mapConcurrently runRequestSeqentially normalSessions
 
 buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Manager -> IO (Either SB.ConversionError ResponseAndLatency)
 buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
   req <- newEitherT $ RB.buildRequest placeholder apiTemplate
   responseWithLatency <- newEitherT $ runRequest manager req
+  -- _ <-  print $ show responseWithLatency
   pure responseWithLatency
 
 runRequest :: Manager -> Request -> IO (Either SB.ConversionError ResponseAndLatency)
