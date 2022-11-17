@@ -28,10 +28,22 @@ import qualified Control.Exception as Ex
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 5
+  let sessionCount = 1
+  let timeInSeconds  = 1
+  currentTime <- getPOSIXTime
   let sessionTemplate = fromRightErr $ SB.loadSessionTemplate res
-  result <- loadRunner sessionCount sessionTemplate
-  print result
+  finalResult <-  runLoadTillGivenTime currentTime sessionCount timeInSeconds sessionTemplate mempty
+  print $ show finalResult
+
+runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
+runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate acc = do
+  currentTime <- getPOSIXTime
+  if (fromDiffTimeToSeconds $ currentTime - intialTime) < toPico totalTimeToRun
+    then do
+      res <- loadRunner numberOfParallelThreads sessionTemplate
+      runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate (acc <> res)
+    else do
+      pure acc
 
 type WithLatency a = (a,POSIXTime)
 
@@ -42,24 +54,49 @@ data LoadReport =
     { totalRequest :: Int
     , successResponse :: Int
     , failureResponse :: Int
-    , rps :: Pico
-    , avgLatency :: Pico
+    , totalTimePerBatch :: [POSIXTime]
+    , averageLatencyPerBatch :: [Pico]
     }
     deriving (Show , Generic , ToJSON)
 
-loadRunner :: Int -> SB.SessionTemplate -> IO String
+
+instance Semigroup LoadReport where
+  (<>) :: LoadReport -> LoadReport -> LoadReport
+  (<>) a b = 
+    LoadReport
+      {
+        totalRequest = (totalRequest a) + (totalRequest b)
+      , successResponse = (successResponse a) + (successResponse b)
+      , failureResponse = (failureResponse a) + (failureResponse b)
+      , totalTimePerBatch = (totalTimePerBatch a) <> (totalTimePerBatch b)
+      , averageLatencyPerBatch = (averageLatencyPerBatch a) <> (averageLatencyPerBatch b)
+      }
+
+instance Monoid LoadReport where
+  mempty :: LoadReport
+  mempty =
+    LoadReport
+      { totalRequest = 0
+      , successResponse = 0
+      , failureResponse = 0
+      , totalTimePerBatch = []
+      , averageLatencyPerBatch = []
+      }
+
+loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
 loadRunner sessionCount sessionTemplate = do
   requestsForSession <- makeSessions sessionCount sessionTemplate
   response <- withLatency $ runRequestParallely requestsForSession
-  return $ show $ generateReport (fst response) (snd response)
+  return $ generateReport (fst response) (snd response)
 
 makeSessions :: Int -> SB.SessionTemplate ->  IO [SB.NormalisedSession]
 makeSessions cnt sessionTemplate = sequence $ generate <$> [1..cnt]
   where
-    generate _ = makeNormalisedSession sessionTemplate
+    generate _ = SB.generateNewSession sessionTemplate
 
-makeNormalisedSession :: SB.SessionTemplate -> IO SB.NormalisedSession
-makeNormalisedSession sessionTemplate = SB.generateNewSession sessionTemplate
+runRequestParallely :: [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
+runRequestParallely normalSessions = do
+  mapConcurrently runRequestSeqentially normalSessions
 
 generateReport :: [[ResponseAndLatency]] -> POSIXTime -> LoadReport
 generateReport responses totalTime =
@@ -69,49 +106,52 @@ generateReport responses totalTime =
     successResponse = length successResponses
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
-    rps = (toPico totalRequest)/(fromDiffTimeToSeconds totalTime)
-    avgLatency = 
-      let total = sum $ (fromDiffTimeToSeconds . snd) <$> successResponses
-      in total/(fromDiffTimeToSeconds totalTime)
+    totalTimePerBatch = [totalTime]
+    averageLatencyPerBatch = [(fromDiffTimeToSeconds $ sum $ snd <$> successResponses) / (toPico successResponse)]
 
--- TODO : Rework this 
 runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
 runRequestSeqentially normalSession = do 
-  manager <- newManager tlsManagerSettings 
+  manager <- newManager tlsManagerSettings
   let sessionApiDataList = SB.generatedApiData normalSession
-  go manager (SB.normalisedPlaceholder normalSession) sessionApiDataList []
+  let placeholderMapperCount = numberOfMappingPresent (SB.normalisedPlaceholder normalSession)
+  go manager (SB.normalisedPlaceholder normalSession) placeholderMapperCount sessionApiDataList []
   where
-    go :: Manager -> HMap.HashMap Text.Text SB.PlaceHolder -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
-    go _ _ [] acc = pure acc
-    go manager placeholder [apiData] acc = do
+    go :: Manager -> HMap.HashMap Text.Text SB.PlaceHolder -> Int -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
+    go _ _ _ [] acc = pure acc
+    go manager placeholder _ [apiData] acc = do
       eitherResponseWithLatency <- buildAndRunRequest placeholder apiData manager
-      print $ show eitherResponseWithLatency
       case eitherResponseWithLatency of
         Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
         Left err -> do 
           print $ show err
           pure $ acc
-    go manager placeholder ((apiLabel,apiData) : xs) acc = do 
+    go manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do 
       eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
-      print $ show eitherResponseWithLatency
       case eitherResponseWithLatency of
           Right (response,latency) -> do
-            updatedPlaceHolder <- decodeResponseToValue placeholder apiLabel (responseBody response)
-            go manager updatedPlaceHolder xs (acc ++ [(response,latency)])
+            (updatedPlaceHolder,mappingCtr) <- 
+              if mappingCount > 0
+                then do 
+                  updPlaceholder <- decodeResponseToValue placeholder apiLabel (responseBody response)
+                  let updatedMapperCount = numberOfMappingPresent updPlaceholder
+                  pure (updPlaceholder,updatedMapperCount)
+                else pure (placeholder,mappingCount)
+            go manager updatedPlaceHolder mappingCtr xs (acc ++ [(response,latency)])
           Left err -> do
             print $ show err
-            go manager placeholder xs acc
-      
+            go manager placeholder mappingCount xs acc
 
-runRequestParallely :: [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
-runRequestParallely normalSessions = do 
-  mapConcurrently runRequestSeqentially normalSessions
+numberOfMappingPresent :: HMap.HashMap Text.Text SB.PlaceHolder -> Int
+numberOfMappingPresent placeholderMap =
+  HMap.foldl' (\mappingCount currentValue -> 
+    case currentValue of
+      SB.Mapping _ -> mappingCount+1
+      _ -> mappingCount) 0 placeholderMap
 
 buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Manager -> IO (Either SB.ConversionError ResponseAndLatency)
 buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
   req <- newEitherT $ RB.buildRequest placeholder apiTemplate
   responseWithLatency <- newEitherT $ runRequest manager req
-  -- _ <-  print $ show responseWithLatency
   pure responseWithLatency
 
 runRequest :: Manager -> Request -> IO (Either SB.ConversionError ResponseAndLatency)
@@ -124,6 +164,8 @@ withLatency action = do
   tick <- getPOSIXTime 
   res <- action
   tock <- getPOSIXTime
+  print $ "tick :" <> show tick
+  print $ "tock :" <> show tock
   return $ (res, tock-tick)
 
 fromRightErr :: (HasCallStack,Show a) => Either a b -> b
@@ -137,7 +179,7 @@ toPico value = MkFixed $ ((toInteger value) * 1000000000000)
 fromDiffTimeToSeconds :: POSIXTime -> Pico
 fromDiffTimeToSeconds = nominalDiffTimeToSeconds
 
-
+-- TODO : Rework this 
 decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
 decodeResponseToValue placeholder apiLabel response = do
   case eitherDecodeStrict $ toStrict response of
