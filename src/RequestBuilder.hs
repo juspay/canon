@@ -3,17 +3,17 @@ module RequestBuilder
   )
   where
 
-import Prelude
-import qualified SessionBuilder as SB
-import qualified Network.HTTP.Client as Client
+import           Prelude
 import qualified Data.HashMap.Strict as HMap
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text as Text
-import qualified Network.HTTP.Types as ClientTypes
-import Data.Text.Encoding (encodeUtf8)
+import           Data.Text.Encoding (encodeUtf8)
 import qualified Data.CaseInsensitive as CI
-import Data.Aeson(encode)
-import Data.Maybe (fromMaybe)
+import           Data.Aeson(encode)
+import           Data.Maybe (fromMaybe)
+import qualified Network.HTTP.Types as ClientTypes
+import qualified Network.HTTP.Client as Client
+import qualified SessionBuilder as SB
 
 buildRequest :: HMap.HashMap Text SB.PlaceHolder -> (Text,SB.ApiTemplate) -> IO (Either SB.ConversionError Client.Request)
 buildRequest placeholders (apiLabel,apiTemplate)  = do

@@ -17,25 +17,25 @@ module SessionBuilder
   where
 
 import           Prelude
-import           Data.Text
-import           Data.Maybe
-import           Data.Text.Encoding (encodeUtf8)
 import           Control.Applicative ((<|>))
+import qualified Control.Exception as Ex
 import qualified Data.HashMap.Strict as HMap
 import qualified Data.Text as Text
-import           GHC.Generics(Generic)
-import           Data.Aeson (FromJSON (parseJSON), withText, ToJSON (toJSON), eitherDecodeStrict, Value(String)) 
-import           Optics.Prism (Prism', prism')
+import qualified Data.UUID as UUID
+import           Data.Text
+import           Data.Maybe
+import           Data.ByteString
+import           Data.Text.Encoding (encodeUtf8)
+import           Data.Aeson (FromJSON (parseJSON), withText, ToJSON (toJSON), eitherDecodeStrict, Value(String))
 import           Data.Attoparsec.Text(char,takeText, parseOnly,try)
+import           Data.Word (Word8)
+import           GHC.Generics(Generic) 
+import           Optics.Prism (Prism', prism')
 import           Optics.AffineFold (preview)
 import           Data.Aeson.Types (Parser)
 import           Optics.Review (review)
-import           Data.ByteString
 import           System.Random (randomIO)
-import           Data.Word (Word8)
 import           GHC.Stack(HasCallStack)
-import qualified Data.UUID as UUID
-import qualified Control.Exception as Ex
 
 data SessionTemplate = 
     SessionTemplate
@@ -111,13 +111,11 @@ placeHolderText = prism' out into
     parseConstant = do
       Constant <$> takeText
 
-
 testParse :: Text -> Either String PlaceHolder
 testParse = eitherDecodeStrict . encodeUtf8 
 
 loadSessionTemplate :: ByteString -> Either String SessionTemplate
 loadSessionTemplate = eitherDecodeStrict
-
 
 generateNewSession :: HasCallStack => SessionTemplate -> IO NormalisedSession
 generateNewSession template = do
@@ -133,7 +131,6 @@ generateNewSession template = do
     apiOrdering = apiOrder template
     getNormalisedPlaceholder = mapM normaliseCommand placeHolderMap
     getNormalisedApi normalisedPlaceholders = (runNormaliseApiData normalisedPlaceholders) <$> orderedApiData
-
     orderedApiData = (\apiLabel -> (apiLabel,fromJust $ HMap.lookup apiLabel apiData)) <$> apiOrdering
 
 data ConversionError = 
@@ -154,10 +151,10 @@ runNormaliseApiData placeholders (apiLabel,apiTemplate) =
       case eitherVal of
         Right val -> val
         Left NotAPlaceholder -> (apiLabel,apiTemplate)
-        Left (CommandNotNormalised err) -> error $ Text.unpack err
         Left (MapperFound _) -> (apiLabel,apiTemplate)
-        Left (PlaceholderNotFound err) -> error $ Text.unpack err
         Left (HttpException err) -> error $ show err
+        Left (CommandNotNormalised err) -> error $ Text.unpack err
+        Left (PlaceholderNotFound err) -> error $ Text.unpack err
 
 normaliseApiData :: HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> Either ConversionError (Text,ApiTemplate)
 normaliseApiData placeholders (apiLabel,apiTemplate) = do 
@@ -167,7 +164,7 @@ normaliseApiData placeholders (apiLabel,apiTemplate) = do
   pure $ (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest, endpoint = normalisedUrl})
   where
     fillConstants :: Text -> Either ConversionError Text
-    fillConstants val = resolveNotAPlaceholder val $ do --fromMaybe val $ do 
+    fillConstants val = resolveNotAPlaceholder val $ do
       placeholderLabel <- getPlaceholder val
       let placeHolderValue = HMap.lookup placeholderLabel placeholders
       case placeHolderValue of
@@ -199,13 +196,9 @@ normaliseCommand a = pure a
 
 runCommand :: Text -> IO Text
 runCommand = \case
-  "randomInt" -> Text.pack . show <$> randomInt
-  "randomId" -> do
-    uuid <- UUID.toText <$> randomUUID
-    pure $ Text.take 6 $ Text.filter (/='-') uuid
-
-  a -> error $ (Text.unpack a) <> " is not a valid command"
-
+  "randomInt"  -> Text.pack . show <$> randomInt
+  "randomId"   -> randomUUID
+  undefinedCmd -> error $ (Text.unpack undefinedCmd) <> " is not a valid command"
 
 -- Word8 is used to keep the output small
 randomInt :: IO Word8
@@ -215,5 +208,6 @@ randomInt = makeNatual <$> randomIO
                  | a == 0 = 1 
                  | otherwise = a `mod` 10000   
 
-randomUUID :: IO UUID.UUID
-randomUUID = randomIO
+randomUUID :: IO Text
+randomUUID = 
+  Text.take 6 . Text.filter (/='-') . UUID.toText <$> randomIO
