@@ -28,6 +28,7 @@ library
       Load
       RequestBuilder
       SessionBuilder
+      Utils
   other-modules:
       Paths_load
   hs-source-dirs:

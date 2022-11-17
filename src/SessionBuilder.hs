@@ -5,6 +5,7 @@ module SessionBuilder
   , generateNewSession
   , loadSessionTemplate
   , normaliseApiData
+  , numberOfMappingPresent
   , NormalisedSession(..)
   , PlaceHolder(..)
   , ReqMethod(..)
@@ -15,24 +16,24 @@ module SessionBuilder
   )
   where
 
-import Prelude
-import Data.Text
-import Data.Maybe
-import qualified Data.Text as Text
-import Data.Text.Encoding (encodeUtf8)
-import Control.Applicative ((<|>))
+import           Prelude
+import           Data.Text
+import           Data.Maybe
+import           Data.Text.Encoding (encodeUtf8)
+import           Control.Applicative ((<|>))
 import qualified Data.HashMap.Strict as HMap
-import GHC.Generics(Generic)
-import Data.Aeson (FromJSON (parseJSON), withText, ToJSON (toJSON), eitherDecodeStrict, Value(String)) 
-import Optics.Prism (Prism', prism')
+import qualified Data.Text as Text
+import           GHC.Generics(Generic)
+import           Data.Aeson (FromJSON (parseJSON), withText, ToJSON (toJSON), eitherDecodeStrict, Value(String)) 
+import           Optics.Prism (Prism', prism')
 import           Data.Attoparsec.Text(char,takeText, parseOnly,try)
 import           Optics.AffineFold (preview)
 import           Data.Aeson.Types (Parser)
 import           Optics.Review (review)
-import Data.ByteString
-import System.Random (randomIO)
-import Data.Word (Word8)
-import GHC.Stack(HasCallStack)
+import           Data.ByteString
+import           System.Random (randomIO)
+import           Data.Word (Word8)
+import           GHC.Stack(HasCallStack)
 import qualified Data.UUID as UUID
 import qualified Control.Exception as Ex
 
@@ -51,6 +52,7 @@ data NormalisedSession =
       }
     deriving (Generic, FromJSON,ToJSON, Show)
 
+-- Nested JSON body not supported yet
 data ApiTemplate = 
   ApiTemplate
     { endpoint :: Text
@@ -184,7 +186,12 @@ normaliseApiData placeholders (apiLabel,apiTemplate) = do
         (Left NotAPlaceholder) -> Right defValue
         a -> a
 
-
+numberOfMappingPresent :: HMap.HashMap Text.Text PlaceHolder -> Int
+numberOfMappingPresent placeholderMap =
+  HMap.foldl' (\mappingCount currentValue -> 
+    case currentValue of
+      Mapping _ -> mappingCount+1
+      _ -> mappingCount) 0 placeholderMap
 
 normaliseCommand :: PlaceHolder -> IO PlaceHolder
 normaliseCommand (Command a) = Constant <$> runCommand a 
