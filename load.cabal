@@ -64,7 +64,7 @@ executable load-exe
       app
   default-extensions:
       ConstraintKinds DataKinds DefaultSignatures DeriveFunctor DeriveGeneric DerivingStrategies DuplicateRecordFields EmptyCase ExplicitNamespaces FlexibleContexts FlexibleInstances FunctionalDependencies GADTs InstanceSigs LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns NoImplicitPrelude OverloadedLabels OverloadedStrings PatternSynonyms PolyKinds RankNTypes RecordWildCards ScopedTypeVariables TupleSections TypeApplications TypeFamilies TypeOperators TypeSynonymInstances UndecidableInstances ViewPatterns
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N1-qa-A32M-AL128M-I0 -O2 -j
   build-depends:
       aeson
     , aeson-pretty

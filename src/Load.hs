@@ -86,7 +86,7 @@ instance Monoid LoadReport where
 loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
 loadRunner sessionCount sessionTemplate = do
   requestsForSession <- makeSessions sessionCount sessionTemplate
-  response <- withLatency $ runRequestParallely requestsForSession
+  response <- withLatency $! runRequestParallely requestsForSession
   return $ generateReport (fst response) (snd response)
 
 makeSessions :: Int -> SB.SessionTemplate ->  IO [SB.NormalisedSession]
@@ -150,13 +150,13 @@ numberOfMappingPresent placeholderMap =
 
 buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Manager -> IO (Either SB.ConversionError ResponseAndLatency)
 buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
-  req <- newEitherT $ RB.buildRequest placeholder apiTemplate
+  req <- newEitherT $! RB.buildRequest placeholder apiTemplate
   responseWithLatency <- newEitherT $ runRequest manager req
   pure responseWithLatency
 
 runRequest :: Manager -> Request -> IO (Either SB.ConversionError ResponseAndLatency)
 runRequest manager req = do 
-  (eitherResponse :: Either Ex.SomeException ResponseAndLatency) <- Ex.try (withLatency $ httpLbs req manager)
+  (eitherResponse :: Either Ex.SomeException ResponseAndLatency) <- Ex.try $! (withLatency $! httpLbs req manager)
   pure $ either (Left . SB.HttpException) (Right) eitherResponse
 
 withLatency :: IO a -> IO (a,POSIXTime)
