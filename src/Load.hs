@@ -24,16 +24,22 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as KM
 import Control.Monad.Trans.Either
 import qualified Control.Exception as Ex
+import qualified Data.IORef as Ref
+import System.IO.Unsafe (unsafePerformIO)
 
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 1
-  let timeInSeconds  = 1
+  let sessionCount = 100
+  let timeInSeconds  = 30
   currentTime <- getPOSIXTime
   let sessionTemplate = fromRightErr $ SB.loadSessionTemplate res
   finalResult <-  runLoadTillGivenTime currentTime sessionCount timeInSeconds sessionTemplate mempty
-  print $ show finalResult
+  errCount <- Ref.readIORef apiErrorCounter
+  print $ show $ finalResult{apiExecutionErrorCount = Just errCount}
+
+apiErrorCounter :: Ref.IORef Int
+apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
 
 runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
 runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate acc = do
@@ -56,6 +62,7 @@ data LoadReport =
     , failureResponse :: Int
     , totalTimePerBatch :: [POSIXTime]
     , averageLatencyPerBatch :: [Pico]
+    , apiExecutionErrorCount :: Maybe Int
     }
     deriving (Show , Generic , ToJSON)
 
@@ -64,12 +71,12 @@ instance Semigroup LoadReport where
   (<>) :: LoadReport -> LoadReport -> LoadReport
   (<>) a b = 
     LoadReport
-      {
-        totalRequest = (totalRequest a) + (totalRequest b)
+      { totalRequest = (totalRequest a) + (totalRequest b)
       , successResponse = (successResponse a) + (successResponse b)
       , failureResponse = (failureResponse a) + (failureResponse b)
       , totalTimePerBatch = (totalTimePerBatch a) <> (totalTimePerBatch b)
       , averageLatencyPerBatch = (averageLatencyPerBatch a) <> (averageLatencyPerBatch b)
+      , apiExecutionErrorCount = (+) <$> (apiExecutionErrorCount a) <*> (apiExecutionErrorCount b)
       }
 
 instance Monoid LoadReport where
@@ -81,6 +88,7 @@ instance Monoid LoadReport where
       , failureResponse = 0
       , totalTimePerBatch = []
       , averageLatencyPerBatch = []
+      , apiExecutionErrorCount = Just 0
       }
 
 loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
@@ -107,7 +115,11 @@ generateReport responses totalTime =
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
     totalTimePerBatch = [totalTime]
-    averageLatencyPerBatch = [(fromDiffTimeToSeconds $ sum $ snd <$> successResponses) / (toPico successResponse)]
+    averageLatencyPerBatch = 
+      if successResponse /= 0 
+        then [(fromDiffTimeToSeconds $ sum $ snd <$> successResponses) / (toPico successResponse)]
+        else [toPico 0]
+    apiExecutionErrorCount = Just 0
 
 runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
 runRequestSeqentially normalSession = do 
@@ -157,15 +169,18 @@ buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
 runRequest :: Manager -> Request -> IO (Either SB.ConversionError ResponseAndLatency)
 runRequest manager req = do 
   (eitherResponse :: Either Ex.SomeException ResponseAndLatency) <- Ex.try $! (withLatency $! httpLbs req manager)
-  pure $ either (Left . SB.HttpException) (Right) eitherResponse
+  either actOnApiError (pure . Right) eitherResponse
+  where
+    actOnApiError :: Ex.SomeException -> IO (Either SB.ConversionError ResponseAndLatency)
+    actOnApiError err = do 
+      _ <- Ref.atomicModifyIORef' apiErrorCounter (\x -> (x+1,()))
+      pure . Left $ SB.HttpException err
 
 withLatency :: IO a -> IO (a,POSIXTime)
 withLatency action = do
   tick <- getPOSIXTime 
   res <- action
   tock <- getPOSIXTime
-  print $ "tick :" <> show tick
-  print $ "tock :" <> show tock
   return $ (res, tock-tick)
 
 fromRightErr :: (HasCallStack,Show a) => Either a b -> b
