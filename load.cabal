@@ -9,9 +9,9 @@ version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/load#readme>
 homepage:       https://github.com/githubuser/load#readme
 bug-reports:    https://github.com/githubuser/load/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2022 Author name here
+author:         Juspay Technologies Pvt Ltd
+maintainer:     shubhanshu.mani@juspay.in
+copyright:      2022 Juspay Technologies Pvt Ltd
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple

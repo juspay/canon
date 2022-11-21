@@ -13,7 +13,6 @@ import qualified Data.List as Arr
 import qualified Data.Text as Text
 import qualified Data.IORef as Ref
 import           Data.Time.Clock.POSIX (getPOSIXTime, POSIXTime)
-import           Data.Fixed(Pico)
 import           Data.Maybe (fromMaybe)
 import           GHC.Generics(Generic)
 import           GHC.Stack (HasCallStack)
@@ -28,8 +27,10 @@ import qualified Utils as Utils
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 100
-  let timeInSeconds = 30
+  let sessionCount = 500
+  let timeInSeconds = 10
+  let responseTimeout = 15
+  Ref.writeIORef loadTestConfig (sessionCount,timeInSeconds,responseTimeout)
   currentTime <- getPOSIXTime
   let sessionTemplate = Utils.fromRightErr $ SB.loadSessionTemplate res
   finalResult <- runLoadTillGivenTime currentTime sessionCount timeInSeconds sessionTemplate mempty
@@ -38,6 +39,9 @@ main = do
 
 apiErrorCounter :: Ref.IORef Int
 apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
+
+loadTestConfig :: Ref.IORef (Int,Int,Int)
+loadTestConfig = unsafePerformIO $ Ref.newIORef (0,0,0)
 
 type WithLatency a = (a,POSIXTime)
 
@@ -49,7 +53,7 @@ data LoadReport =
     , successResponse :: Int
     , failureResponse :: Int
     , totalTimePerBatch :: [POSIXTime]
-    , averageLatencyPerBatch :: [Pico]
+    , latencies :: [POSIXTime]
     , apiExecutionErrorCount :: Maybe Int
     }
     deriving (Show , Generic , ToJSON)
@@ -62,7 +66,7 @@ instance Semigroup LoadReport where
       , successResponse = (successResponse a) + (successResponse b)
       , failureResponse = (failureResponse a) + (failureResponse b)
       , totalTimePerBatch = (totalTimePerBatch a) <> (totalTimePerBatch b)
-      , averageLatencyPerBatch = (averageLatencyPerBatch a) <> (averageLatencyPerBatch b)
+      , latencies = (latencies a) <> (latencies b)
       , apiExecutionErrorCount = (+) <$> (apiExecutionErrorCount a) <*> (apiExecutionErrorCount b)
       }
 
@@ -74,7 +78,7 @@ instance Monoid LoadReport where
       , successResponse = 0
       , failureResponse = 0
       , totalTimePerBatch = []
-      , averageLatencyPerBatch = []
+      , latencies = []
       , apiExecutionErrorCount = Just 0
       }
 
@@ -104,8 +108,9 @@ runRequestParallely normalSessions = do
   mapConcurrently runRequestSeqentially normalSessions
 
 runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
-runRequestSeqentially normalSession = do 
-  manager <- Client.newManager tlsManagerSettings
+runRequestSeqentially normalSession = do
+  (_,_,responseTimeout) <- Ref.readIORef loadTestConfig
+  manager <- Client.newManager $ tlsManagerSettings {Client.managerResponseTimeout = Client.responseTimeoutMicro $ Utils.toMicroFromSec responseTimeout}
   let sessionApiDataList = SB.generatedApiData normalSession
   let placeholderMapperCount = SB.numberOfMappingPresent (SB.normalisedPlaceholder normalSession)
   executeApiTemplate manager (SB.normalisedPlaceholder normalSession) placeholderMapperCount sessionApiDataList []
@@ -182,10 +187,10 @@ generateReport responses totalTime =
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
     totalTimePerBatch = [totalTime]
-    averageLatencyPerBatch = 
+    latencies = 
       if successResponse /= 0 
-        then [(Utils.fromDiffTimeToSeconds $ sum $ snd <$> successResponses) / (Utils.toPico successResponse)]
-        else [Utils.toPico 0]
+        then (snd <$> successResponses)
+        else [0]
     apiExecutionErrorCount = Just 0
 
 withLatency :: IO a -> IO (a,POSIXTime)

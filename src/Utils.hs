@@ -4,6 +4,7 @@ module Utils
   , toPico
   , fromDiffTimeToSeconds
   , commandLineHandler
+  , toMicroFromSec
   )
   where
 
@@ -44,6 +45,9 @@ fromJustErr mssg Nothing = error mssg
 
 toPico :: Int -> Fixed.Pico
 toPico value = Fixed.MkFixed $ ((toInteger value) * 1000000000000)
+
+toMicroFromSec :: Int -> Int
+toMicroFromSec = (*) (1000 * 1000)
 
 fromDiffTimeToSeconds :: POSIXTime -> Fixed.Pico
 fromDiffTimeToSeconds = nominalDiffTimeToSeconds

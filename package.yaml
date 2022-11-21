@@ -2,9 +2,9 @@ name:                load
 version:             0.1.0.0
 github:              "githubuser/load"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2022 Author name here"
+author:              "Juspay Technologies Pvt Ltd"
+maintainer:          "shubhanshu.mani@juspay.in"
+copyright:           "2022 Juspay Technologies Pvt Ltd"
 
 extra-source-files:
 - README.md
@@ -38,6 +38,7 @@ dependencies:
 - http-client-tls
 - uuid
 - transformers-either
+
 ghc-options:
 - -Wall
 - -Wcompat
