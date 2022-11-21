@@ -22,7 +22,7 @@ import qualified Control.Exception as Ex
 import qualified Data.HashMap.Strict as HMap
 import qualified Data.Text as Text
 import qualified Data.UUID as UUID
-import           Data.Text
+import           Data.Text (Text)
 import           Data.Maybe
 import           Data.ByteString
 import           Data.Text.Encoding (encodeUtf8)
@@ -160,7 +160,8 @@ normaliseApiData :: HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> Eith
 normaliseApiData placeholders (apiLabel,apiTemplate) = do 
   normalisedHeader <- mapM fillConstants (headers apiTemplate)
   normalisedRequest <- mapM fillConstants (request apiTemplate)
-  normalisedUrl <- fillConstants (endpoint apiTemplate)
+  -- TODO: Handling of query_params is required
+  normalisedUrl <-  Text.intercalate "/" <$> (mapM fillConstants (Text.splitOn "/" $ endpoint apiTemplate))
   pure $ (apiLabel, apiTemplate {headers = normalisedHeader , request = normalisedRequest, endpoint = normalisedUrl})
   where
     fillConstants :: Text -> Either ConversionError Text

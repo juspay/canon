@@ -27,8 +27,8 @@ import qualified Utils as Utils
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 500
-  let timeInSeconds = 10
+  let sessionCount = 1
+  let timeInSeconds = 1
   let responseTimeout = 15
   Ref.writeIORef loadTestConfig (sessionCount,timeInSeconds,responseTimeout)
   currentTime <- getPOSIXTime
@@ -99,7 +99,7 @@ loadRunner sessionCount sessionTemplate = do
   return $ generateReport (fst response) (snd response)
 
 makeSessions :: Int -> SB.SessionTemplate ->  IO [SB.NormalisedSession]
-makeSessions cnt sessionTemplate = sequence $ generate <$> [1..cnt]
+makeSessions cnt sessionTemplate = sequence $! generate <$> [1..cnt]
   where
     generate _ = SB.generateNewSession sessionTemplate
 
@@ -154,7 +154,7 @@ runRequest manager req =
       _ <- Ref.atomicModifyIORef' apiErrorCounter (\x -> (x+1,()))
       pure . Left $ SB.HttpException err
 
--- TODO : Rework this 
+-- TODO : Rework this
 decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> BSL.ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
 decodeResponseToValue placeholder apiLabel response = do
   case eitherDecodeStrict $ BSL.toStrict response of
