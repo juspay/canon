@@ -5,7 +5,9 @@
     "merchant_id": "paypal",
     "amount": "$randomInt",
     "customer_id": "$randomId",
-    "payStartUrl": "@api~txns~response~payment~authentication~url"
+    "payStartUrl": "@api~txns~response~payment~authentication~url",
+    "txn_uuid" : "@api~txns~response~txn_uuid",
+    "txn_id" : "@api~txns~response~txn_id"
   },
   "apiOrder": [
     "order-create",
@@ -59,6 +61,26 @@
         "x-merchantid": "#merchant_id"
       },
       "request": {}
+    },
+    "payResponse": {
+      "endpoint": "http://localhost:8081/v2/pay/response/#merchant_id/#txn_uuid",
+      "method": "POST",
+      "contentType": "URLFORMENCODED",
+      "headers": {
+        "x-merchantid": "#merchant_id"
+      },
+      "request": {
+        "BANKTXNID": "",
+        "CHECKSUMHASH": "FILTERED",
+        "CURRENCY": "INR",
+        "MID": "#merchant_id",
+        "ORDERID": "#txn_id",
+        "RESPCODE": "141",
+        "RESPMSG": "User has not completed transaction.",
+        "STATUS": "TXN_FAILURE",
+        "TXNAMOUNT": "#amount",
+        "TXNID": "2.02211221112128e+34"
+      }
     },
     "orderStatus": {
       "endpoint": "https://sandbox.juspay.in/ecr/orderStatus",

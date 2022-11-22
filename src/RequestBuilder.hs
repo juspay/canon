@@ -1,5 +1,6 @@
 module RequestBuilder 
-  (buildRequest
+  ( buildRequest
+  , buildRequestErrorCounter
   )
   where
 
@@ -14,6 +15,8 @@ import           Data.Maybe (fromMaybe)
 import qualified Network.HTTP.Types as ClientTypes
 import qualified Network.HTTP.Client as Client
 import qualified SessionBuilder as SB
+import           System.IO.Unsafe (unsafePerformIO)
+import qualified Data.IORef as Ref
 
 buildRequest :: HMap.HashMap Text SB.PlaceHolder -> (Text,SB.ApiTemplate) -> IO (Either SB.ConversionError Client.Request)
 buildRequest placeholders (apiLabel,apiTemplate)  = do
@@ -23,7 +26,12 @@ buildRequest placeholders (apiLabel,apiTemplate)  = do
       baseRequest <- Client.parseRequest $ Text.unpack $  SB.endpoint normalApiTemplate
       let newRequest = baseRequest { Client.method = fromReqMethod $ SB.method normalApiTemplate , Client.requestHeaders = fromHeaders $ SB.headers normalApiTemplate}
       pure $ Right $ addBodyToRequest (SB.contentType normalApiTemplate) (SB.request normalApiTemplate) newRequest
-    Left err -> pure $ Left err
+    Left err -> do 
+      Ref.atomicModifyIORef' buildRequestErrorCounter (\x -> (x+1,()))
+      pure $ Left err
+
+buildRequestErrorCounter :: Ref.IORef Int
+buildRequestErrorCounter = unsafePerformIO $ Ref.newIORef 0
 
 fromReqMethod :: SB.ReqMethod -> ClientTypes.Method
 fromReqMethod SB.POST = ClientTypes.methodPost

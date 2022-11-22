@@ -5,6 +5,7 @@ module Utils
   , fromDiffTimeToSeconds
   , commandLineHandler
   , toMicroFromSec
+  , Config(..)
   )
   where
 
@@ -56,8 +57,10 @@ data Config = Config
   { numberOfThreads :: Int
   , timeToRun :: Int
   , pathOfTemplate :: String
+  , responseTimeoutInSeconds :: Int
+  , verbose :: Bool 
   }
-  deriving (Show)
+  deriving (Show,Read)
 
 commandLineHandler :: HasCallStack => IO Config
 commandLineHandler = do
@@ -70,6 +73,8 @@ handler ["-p",threads ,"-t", duration ,"-c",templatePath] = do
   let numberOfThreads = fromJustErr "Not a valid value" $ readMaybe threads
   let timeToRun = fromJustErr "Not a valid value" $ readMaybe duration
   let pathOfTemplate = templatePath
+  let responseTimeoutInSeconds = 15
+  let verbose = False
   pure Config{..}
 handler _ = help >> exitSuccess
 

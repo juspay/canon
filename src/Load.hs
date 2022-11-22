@@ -24,24 +24,39 @@ import qualified SessionBuilder as SB
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Utils as Utils
 
+
+mkConfig :: Utils.Config
+mkConfig =
+  Utils.Config
+    { numberOfThreads = 1
+    , timeToRun = 1
+    , pathOfTemplate = "/Users/shubhanshumani/loadtest/load/src/api_config.json"
+    , responseTimeoutInSeconds = 15
+    , verbose = True
+    }
+
 main :: HasCallStack => IO ()
 main = do
-  res <- BS.readFile "/Users/shubhanshumani/loadtest/load/src/api_config.json"
-  let sessionCount = 1
-  let timeInSeconds = 1
-  let responseTimeout = 15
-  Ref.writeIORef loadTestConfig (sessionCount,timeInSeconds,responseTimeout)
+  res <- BS.readFile $ Utils.pathOfTemplate config
   currentTime <- getPOSIXTime
   let sessionTemplate = Utils.fromRightErr $ SB.loadSessionTemplate res
   finalResult <- runLoadTillGivenTime currentTime sessionCount timeInSeconds sessionTemplate mempty
   errCount <- Ref.readIORef apiErrorCounter
-  print $ show $ finalResult{apiExecutionErrorCount = Just errCount}
+  requestBuildErrCount <- Ref.readIORef RB.buildRequestErrorCounter
+  print $ show $ finalResult{apiExecutionErrorCount = Just errCount, requestBuildErrorCount = Just requestBuildErrCount}
+  where
+    config = mkConfig
+    sessionCount = Utils.numberOfThreads config 
+    timeInSeconds = Utils.timeToRun config
+
 
 apiErrorCounter :: Ref.IORef Int
 apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
 
-loadTestConfig :: Ref.IORef (Int,Int,Int)
-loadTestConfig = unsafePerformIO $ Ref.newIORef (0,0,0)
+loadTestConfig :: Ref.IORef Utils.Config
+loadTestConfig = unsafePerformIO $ Ref.newIORef mkConfig
+
+
 
 type WithLatency a = (a,POSIXTime)
 
@@ -55,6 +70,7 @@ data LoadReport =
     , totalTimePerBatch :: [POSIXTime]
     , latencies :: [POSIXTime]
     , apiExecutionErrorCount :: Maybe Int
+    , requestBuildErrorCount :: Maybe Int
     }
     deriving (Show , Generic , ToJSON)
 
@@ -68,6 +84,7 @@ instance Semigroup LoadReport where
       , totalTimePerBatch = (totalTimePerBatch a) <> (totalTimePerBatch b)
       , latencies = (latencies a) <> (latencies b)
       , apiExecutionErrorCount = (+) <$> (apiExecutionErrorCount a) <*> (apiExecutionErrorCount b)
+      , requestBuildErrorCount = (+) <$> (requestBuildErrorCount a) <*> (requestBuildErrorCount b)
       }
 
 instance Monoid LoadReport where
@@ -80,6 +97,7 @@ instance Monoid LoadReport where
       , totalTimePerBatch = []
       , latencies = []
       , apiExecutionErrorCount = Just 0
+      , requestBuildErrorCount = Just 0
       }
 
 runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
@@ -109,7 +127,7 @@ runRequestParallely normalSessions = do
 
 runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
 runRequestSeqentially normalSession = do
-  (_,_,responseTimeout) <- Ref.readIORef loadTestConfig
+  responseTimeout <- Utils.responseTimeoutInSeconds <$> Ref.readIORef loadTestConfig
   manager <- Client.newManager $ tlsManagerSettings {Client.managerResponseTimeout = Client.responseTimeoutMicro $ Utils.toMicroFromSec responseTimeout}
   let sessionApiDataList = SB.generatedApiData normalSession
   let placeholderMapperCount = SB.numberOfMappingPresent (SB.normalisedPlaceholder normalSession)
@@ -122,7 +140,7 @@ executeApiTemplate manager placeholder _ [apiData] acc = do
   case eitherResponseWithLatency of
     Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
     Left err -> do 
-      print $ show err
+      printLog $ show err
       pure $ acc
 executeApiTemplate manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do 
   eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
@@ -137,7 +155,7 @@ executeApiTemplate manager placeholder mappingCount ((apiLabel,apiData) : xs) ac
             else pure (placeholder,mappingCount)
         executeApiTemplate manager updatedPlaceHolder mappingCtr xs (acc ++ [(response,latency)])
       Left err -> do
-        print $ show err
+        printLog $ show err
         executeApiTemplate manager placeholder mappingCount xs acc
 
 buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Client.Manager -> IO (Either SB.ConversionError ResponseAndLatency)
@@ -147,8 +165,10 @@ buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
   pure responseWithLatency
 
 runRequest :: Client.Manager -> Client.Request -> IO (Either SB.ConversionError ResponseAndLatency)
-runRequest manager req =
-    either actOnApiError (pure . Right) =<< (Ex.try $! (withLatency $! Client.httpLbs req manager))
+runRequest manager req = do
+    res <- either actOnApiError (pure . Right) =<< (Ex.try $! (withLatency $! Client.httpLbs req manager))
+    printLog $ show res
+    pure res
   where
     actOnApiError err = do 
       _ <- Ref.atomicModifyIORef' apiErrorCounter (\x -> (x+1,()))
@@ -161,7 +181,7 @@ decodeResponseToValue placeholder apiLabel response = do
     Right (val :: Value) -> do
       pure $ HMap.map (updateValuesInPlaceholder (apiLabel,val)) placeholder
     Left err -> do 
-      print $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
+      printLog $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
       pure placeholder
 
 updateValuesInPlaceholder :: (Text.Text , Value) -> SB.PlaceHolder -> SB.PlaceHolder
@@ -182,7 +202,7 @@ generateReport :: [[ResponseAndLatency]] -> POSIXTime -> LoadReport
 generateReport responses totalTime =
   LoadReport{..}
   where
-    successResponses = filter ((200==) . Client.statusCode . Client.responseStatus . fst) $ concat responses
+    successResponses = filter ((\code -> code >= 200 && code <= 399) . Client.statusCode . Client.responseStatus . fst) $ concat responses
     successResponse = length successResponses
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
@@ -192,6 +212,7 @@ generateReport responses totalTime =
         then (snd <$> successResponses)
         else [0]
     apiExecutionErrorCount = Just 0
+    requestBuildErrorCount = Just 0
 
 withLatency :: IO a -> IO (a,POSIXTime)
 withLatency action = do
@@ -199,3 +220,11 @@ withLatency action = do
   res <- action
   tock <- getPOSIXTime
   return $ (res, tock-tick)
+
+printLog :: (Show a) => a -> IO ()
+printLog mssg = do
+  isVerbose <- Utils.verbose <$> Ref.readIORef loadTestConfig
+  if isVerbose
+    then print mssg
+    else pure ()
+  
