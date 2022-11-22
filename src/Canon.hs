@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveAnyClass      #-}
-module Load (main) where
+module Canon (main) where
 
 import           Prelude
 import           Control.Concurrent.Async

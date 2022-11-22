@@ -1,7 +1,7 @@
 module Main (main)  where
 
 import Prelude
-import qualified Load as L
+import qualified Canon as C
 
 main :: IO ()
-main = L.main
+main = C.main

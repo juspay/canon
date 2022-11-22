@@ -4,11 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           load
+name:           canon
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/load#readme>
-homepage:       https://github.com/githubuser/load#readme
-bug-reports:    https://github.com/githubuser/load/issues
+description:    Please see the README on GitHub at <https://github.com/juspay/canon#readme>
+homepage:       https://github.com/juspay/canon#readme
+bug-reports:    https://github.com/juspay/canon/issues
 author:         Juspay Technologies Pvt Ltd
 maintainer:     shubhanshu.mani@juspay.in
 copyright:      2022 Juspay Technologies Pvt Ltd
@@ -21,16 +21,16 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/load
+  location: https://github.com/juspay/canon
 
 library
   exposed-modules:
-      Load
+      Canon
       RequestBuilder
       SessionBuilder
       Utils
   other-modules:
-      Paths_load
+      Paths_canon
   hs-source-dirs:
       src
   default-extensions:
@@ -57,10 +57,10 @@ library
     , uuid
   default-language: Haskell2010
 
-executable load-exe
+executable canon-exe
   main-is: Main.hs
   other-modules:
-      Paths_load
+      Paths_canon
   hs-source-dirs:
       app
   default-extensions:
@@ -73,12 +73,12 @@ executable load-exe
     , attoparsec
     , base >=4.7 && <5
     , bytestring
+    , canon
     , case-insensitive
     , http-api-data
     , http-client
     , http-client-tls
     , http-types
-    , load
     , optics-core
     , random
     , text
@@ -88,11 +88,11 @@ executable load-exe
     , uuid
   default-language: Haskell2010
 
-test-suite load-test
+test-suite canon-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_load
+      Paths_canon
   hs-source-dirs:
       test
   default-extensions:
@@ -105,12 +105,12 @@ test-suite load-test
     , attoparsec
     , base >=4.7 && <5
     , bytestring
+    , canon
     , case-insensitive
     , http-api-data
     , http-client
     , http-client-tls
     , http-types
-    , load
     , optics-core
     , random
     , text
