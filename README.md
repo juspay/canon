@@ -1,4 +1,4 @@
-# load
+# Canon - Haskell based load testing tool
 A load testing tool for Rest API based applications.
 
 Users need to define a template that is equivalent to a session here session can have one or more APIs that are called sequentially
