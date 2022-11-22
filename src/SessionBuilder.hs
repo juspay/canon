@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveAnyClass      #-}
-module SessionBuilder 
+module SessionBuilder
   ( testParse
   , randomInt
   , generateNewSession
@@ -29,7 +29,7 @@ import           Data.Text.Encoding (encodeUtf8)
 import           Data.Aeson (FromJSON (parseJSON), withText, ToJSON (toJSON), eitherDecodeStrict, Value(String))
 import           Data.Attoparsec.Text(char,takeText, parseOnly,try)
 import           Data.Word (Word8)
-import           GHC.Generics(Generic) 
+import           GHC.Generics(Generic)
 import           Optics.Prism (Prism', prism')
 import           Optics.AffineFold (preview)
 import           Data.Aeson.Types (Parser)
@@ -37,7 +37,7 @@ import           Optics.Review (review)
 import           System.Random (randomIO)
 import           GHC.Stack(HasCallStack)
 
-data SessionTemplate = 
+data SessionTemplate =
     SessionTemplate
       { placeholder :: HMap.HashMap Text PlaceHolder
       , api :: HMap.HashMap Text ApiTemplate
@@ -45,7 +45,7 @@ data SessionTemplate =
       }
     deriving (Generic, FromJSON,ToJSON, Show)
 
-data NormalisedSession = 
+data NormalisedSession =
     NormalisedSession
       { normalisedPlaceholder :: HMap.HashMap Text PlaceHolder
       , generatedApiData :: [(Text,ApiTemplate)]
@@ -53,7 +53,7 @@ data NormalisedSession =
     deriving (Generic, FromJSON,ToJSON, Show)
 
 -- Nested JSON body not supported yet
-data ApiTemplate = 
+data ApiTemplate =
   ApiTemplate
     { endpoint :: Text
     , method :: ReqMethod
@@ -63,17 +63,17 @@ data ApiTemplate =
     }
     deriving (Generic, FromJSON,ToJSON, Show)
 
-data ReqMethod = 
-    GET 
+data ReqMethod =
+    GET
   | POST
   deriving (Generic, FromJSON,ToJSON, Show)
 
 data ContentType =
-    JSON 
+    JSON
   | URLFORMENCODED
   deriving (Generic, FromJSON,ToJSON, Show)
 
-data PlaceHolder = 
+data PlaceHolder =
     Command Text
   | Mapping Text
   | Constant Text
@@ -92,15 +92,15 @@ instance FromJSON PlaceHolder where
 
 placeHolderText :: Prism' Text PlaceHolder
 placeHolderText = prism' out into
-  where 
-    out a = case a of 
+  where
+    out a = case a of
       Command b -> b
       Mapping b -> b
       Constant b -> b
     into = either (const Nothing) pure . parseOnly p
     p = try parseCommand <|> parseMapping <|> parseConstant
     -- Pase a command using `$` identifier
-    parseCommand = do 
+    parseCommand = do
       _ <- char ('$')
       Command <$> takeText
     -- Parse a mapping placeholder and append `~` in the begining for easy identification
@@ -112,7 +112,7 @@ placeHolderText = prism' out into
       Constant <$> takeText
 
 testParse :: Text -> Either String PlaceHolder
-testParse = eitherDecodeStrict . encodeUtf8 
+testParse = eitherDecodeStrict . encodeUtf8
 
 loadSessionTemplate :: ByteString -> Either String SessionTemplate
 loadSessionTemplate = eitherDecodeStrict
@@ -125,7 +125,7 @@ generateNewSession template = do
       { normalisedPlaceholder = normalisedPlaceholder
       , generatedApiData = nomalisedApi
       }
-  where 
+  where
     placeHolderMap = placeholder template
     apiData = api template
     apiOrdering = apiOrder template
@@ -133,7 +133,7 @@ generateNewSession template = do
     getNormalisedApi normalisedPlaceholders = (runNormaliseApiData normalisedPlaceholders) <$> orderedApiData
     orderedApiData = (\apiLabel -> (apiLabel,fromJust $ HMap.lookup apiLabel apiData)) <$> apiOrdering
 
-data ConversionError = 
+data ConversionError =
     NotAPlaceholder
   | CommandNotNormalised Text
   | MapperFound Text
@@ -142,12 +142,12 @@ data ConversionError =
   deriving (Show)
 
 runNormaliseApiData :: HasCallStack => HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> (Text,ApiTemplate)
-runNormaliseApiData placeholders (apiLabel,apiTemplate) = 
+runNormaliseApiData placeholders (apiLabel,apiTemplate) =
   let normalisedData = normaliseApiData placeholders (apiLabel,apiTemplate)
   in resolveEither normalisedData
   where
     resolveEither :: Either ConversionError (Text,ApiTemplate) -> (Text,ApiTemplate)
-    resolveEither eitherVal = 
+    resolveEither eitherVal =
       case eitherVal of
         Right val -> val
         Left NotAPlaceholder -> (apiLabel,apiTemplate)
@@ -157,7 +157,7 @@ runNormaliseApiData placeholders (apiLabel,apiTemplate) =
         Left (PlaceholderNotFound err) -> error $ Text.unpack err
 
 normaliseApiData :: HMap.HashMap Text PlaceHolder ->  (Text,ApiTemplate) -> Either ConversionError (Text,ApiTemplate)
-normaliseApiData placeholders (apiLabel,apiTemplate) = do 
+normaliseApiData placeholders (apiLabel,apiTemplate) = do
   normalisedHeader <- mapM fillConstants (headers apiTemplate)
   normalisedRequest <- mapM fillConstants (request apiTemplate)
   -- TODO: Handling of query_params is required
@@ -179,21 +179,21 @@ normaliseApiData placeholders (apiLabel,apiTemplate) = do
     getPlaceholder a = if (Text.head a == '#') then Right $ Text.tail a else Left $ NotAPlaceholder
 
     resolveNotAPlaceholder :: Text ->  Either ConversionError Text -> Either ConversionError Text
-    resolveNotAPlaceholder defValue eitherVal = 
+    resolveNotAPlaceholder defValue eitherVal =
       case eitherVal of
         (Left NotAPlaceholder) -> Right defValue
         a -> a
 
 numberOfMappingPresent :: HMap.HashMap Text.Text PlaceHolder -> Int
 numberOfMappingPresent placeholderMap =
-  HMap.foldl' (\mappingCount currentValue -> 
+  HMap.foldl' (\mappingCount currentValue ->
     case currentValue of
       Mapping _ -> mappingCount+1
       _ -> mappingCount) 0 placeholderMap
 
 normaliseCommand :: PlaceHolder -> IO PlaceHolder
-normaliseCommand (Command a) = Constant <$> runCommand a 
-normaliseCommand a = pure a 
+normaliseCommand (Command a) = Constant <$> runCommand a
+normaliseCommand a = pure a
 
 runCommand :: Text -> IO Text
 runCommand = \case
@@ -206,9 +206,9 @@ randomInt :: IO Word8
 randomInt = makeNatual <$> randomIO
   where
     makeNatual a | a < 0 = (a * (-1)) `mod` 10000
-                 | a == 0 = 1 
-                 | otherwise = a `mod` 10000   
+                 | a == 0 = 1
+                 | otherwise = a `mod` 10000
 
 randomUUID :: IO Text
-randomUUID = 
+randomUUID =
   Text.take 6 . Text.filter (/='-') . UUID.toText <$> randomIO

@@ -1,4 +1,4 @@
-module Utils 
+module Utils
   ( digMap
   , fromRightErr
   , toPico
@@ -22,17 +22,17 @@ import qualified Data.Fixed as Fixed
 import           System.Environment(getArgs)
 import           System.Exit(exitSuccess)
 
--- Given a list of keys recursively traverse the json 
+-- Given a list of keys recursively traverse the json
 -- and find the value
 digMap :: [Text] -> Maybe A.Value -> Maybe A.Value
-digMap _ Nothing = Nothing 
+digMap _ Nothing = Nothing
 digMap [] val = val
-digMap [x] (Just val) = lookUpFromObject x val 
-digMap (x : xs) (Just val) =  digMap xs $ lookUpFromObject x val 
+digMap [x] (Just val) = lookUpFromObject x val
+digMap (x : xs) (Just val) =  digMap xs $ lookUpFromObject x val
 
 lookUpFromObject :: Text -> A.Value -> Maybe A.Value
 lookUpFromObject key val =
-  case val of 
+  case val of
     (A.Object v) -> KM.lookup (KM.fromText key) v
     _ -> Nothing
 
@@ -42,7 +42,7 @@ fromRightErr (Left err) = error $ show err
 
 fromJustErr :: HasCallStack => String -> Maybe b -> b
 fromJustErr _mssg (Just a) = a
-fromJustErr mssg Nothing = error mssg 
+fromJustErr mssg Nothing = error mssg
 
 toPico :: Int -> Fixed.Pico
 toPico value = Fixed.MkFixed $ ((toInteger value) * 1000000000000)
@@ -58,7 +58,7 @@ data Config = Config
   , timeToRun :: Int
   , pathOfTemplate :: String
   , responseTimeoutInSeconds :: Int
-  , verbose :: Bool 
+  , verbose :: Bool
   }
   deriving (Show,Read)
 

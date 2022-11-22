@@ -6,8 +6,8 @@
     "amount": "$randomInt",
     "customer_id": "$randomId",
     "payStartUrl": "@api~txns~response~payment~authentication~url",
-    "txn_uuid" : "@api~txns~response~txn_uuid",
-    "txn_id" : "@api~txns~response~txn_id"
+    "txn_uuid": "@api~txns~response~txn_uuid",
+    "txn_id": "@api~txns~response~txn_id"
   },
   "apiOrder": [
     "order-create",

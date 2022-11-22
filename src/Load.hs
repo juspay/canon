@@ -46,9 +46,8 @@ main = do
   print $ show $ finalResult{apiExecutionErrorCount = Just errCount, requestBuildErrorCount = Just requestBuildErrCount}
   where
     config = mkConfig
-    sessionCount = Utils.numberOfThreads config 
+    sessionCount = Utils.numberOfThreads config
     timeInSeconds = Utils.timeToRun config
-
 
 apiErrorCounter :: Ref.IORef Int
 apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
@@ -56,13 +55,11 @@ apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
 loadTestConfig :: Ref.IORef Utils.Config
 loadTestConfig = unsafePerformIO $ Ref.newIORef mkConfig
 
-
-
 type WithLatency a = (a,POSIXTime)
 
 type ResponseAndLatency = WithLatency (Client.Response BSL.ByteString)
 
-data LoadReport = 
+data LoadReport =
   LoadReport
     { totalRequest :: Int
     , successResponse :: Int
@@ -76,7 +73,7 @@ data LoadReport =
 
 instance Semigroup LoadReport where
   (<>) :: LoadReport -> LoadReport -> LoadReport
-  (<>) a b = 
+  (<>) a b =
     LoadReport
       { totalRequest = (totalRequest a) + (totalRequest b)
       , successResponse = (successResponse a) + (successResponse b)
@@ -139,16 +136,16 @@ executeApiTemplate manager placeholder _ [apiData] acc = do
   eitherResponseWithLatency <- buildAndRunRequest placeholder apiData manager
   case eitherResponseWithLatency of
     Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
-    Left err -> do 
+    Left err -> do
       printLog $ show err
       pure $ acc
-executeApiTemplate manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do 
+executeApiTemplate manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do
   eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
   case eitherResponseWithLatency of
       Right (response,latency) -> do
-        (updatedPlaceHolder,mappingCtr) <- 
+        (updatedPlaceHolder,mappingCtr) <-
           if mappingCount > 0
-            then do 
+            then do
               updPlaceholder <- decodeResponseToValue placeholder apiLabel (Client.responseBody response)
               let updatedMapperCount = SB.numberOfMappingPresent updPlaceholder
               pure (updPlaceholder,updatedMapperCount)
@@ -170,7 +167,7 @@ runRequest manager req = do
     printLog $ show res
     pure res
   where
-    actOnApiError err = do 
+    actOnApiError err = do
       _ <- Ref.atomicModifyIORef' apiErrorCounter (\x -> (x+1,()))
       pure . Left $ SB.HttpException err
 
@@ -180,7 +177,7 @@ decodeResponseToValue placeholder apiLabel response = do
   case eitherDecodeStrict $ BSL.toStrict response of
     Right (val :: Value) -> do
       pure $ HMap.map (updateValuesInPlaceholder (apiLabel,val)) placeholder
-    Left err -> do 
+    Left err -> do
       printLog $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
       pure placeholder
 
@@ -207,8 +204,8 @@ generateReport responses totalTime =
     failureResponse = totalRequest - successResponse
     totalRequest = length $ concat responses
     totalTimePerBatch = [totalTime]
-    latencies = 
-      if successResponse /= 0 
+    latencies =
+      if successResponse /= 0
         then (snd <$> successResponses)
         else [0]
     apiExecutionErrorCount = Just 0
@@ -216,7 +213,7 @@ generateReport responses totalTime =
 
 withLatency :: IO a -> IO (a,POSIXTime)
 withLatency action = do
-  tick <- getPOSIXTime 
+  tick <- getPOSIXTime
   res <- action
   tock <- getPOSIXTime
   return $ (res, tock-tick)
@@ -227,4 +224,3 @@ printLog mssg = do
   if isVerbose
     then print mssg
     else pure ()
-  
