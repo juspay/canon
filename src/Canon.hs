@@ -4,6 +4,7 @@ module Canon (main) where
 import           Prelude
 import           Control.Concurrent.Async
 import           Control.Monad.Trans.Either
+import qualified Control.Monad as CM
 import qualified Control.Exception as Ex
 import           Data.Aeson (ToJSON,Value(String),eitherDecodeStrict)
 import qualified Data.ByteString.Lazy as BSL
@@ -23,12 +24,13 @@ import qualified RequestBuilder as RB
 import qualified SessionBuilder as SB
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Utils as Utils
+import           Control.Concurrent (forkIO,myThreadId,threadDelay)
 
 
 mkConfig :: Utils.Config
 mkConfig =
   Utils.Config
-    { numberOfThreads = 100
+    { numberOfThreads = 10
     , timeToRun = 30
     , pathOfTemplate = "/Users/shubhanshumani/loadtest/canon/src/api_config.json"
     , responseTimeoutInSeconds = 15
@@ -38,8 +40,9 @@ mkConfig =
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile $ Utils.pathOfTemplate config
-  -- currentTime <- getPOSIXTime
+  currentTime <- getPOSIXTime
   let sessionTemplate = Utils.fromRightErr $ SB.loadSessionTemplate res
+  runController currentTime
   finalResult <- loadRunner sessionCount sessionTemplate
   errCount <- Ref.readIORef apiErrorCounter
   requestBuildErrCount <- Ref.readIORef RB.buildRequestErrorCounter
@@ -47,7 +50,24 @@ main = do
   where
     config = mkConfig
     sessionCount = Utils.numberOfThreads config
-    -- timeInSeconds = Utils.timeToRun config
+    runController currentTime = CM.void . forkIO $ controller currentTime
+
+data Completed = Completed
+  deriving (Show)
+
+instance Ex.Exception Completed
+
+controller :: POSIXTime -> IO ()
+controller initialTime =
+  CM.void $ Ex.catch timer (\(_e ::Completed) -> (putStrLn "Generating Report...") *> myThreadId)
+  where 
+    timer = CM.forever $ do
+      timeToRun <- Utils.timeToRun <$> Ref.readIORef loadTestConfig
+      currentTime <- getPOSIXTime
+      print $ currentTime
+      let isTimeOver = (Utils.fromDiffTimeToSeconds $ currentTime - initialTime) >= (Utils.toPico timeToRun)
+      CM.when isTimeOver $ (Ref.writeIORef loadStopRef True) *> Ex.throwIO Completed
+      threadDelay $ Utils.toMicroFromSec 1
 
 apiErrorCounter :: Ref.IORef Int
 apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
@@ -55,10 +75,8 @@ apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
 loadTestConfig :: Ref.IORef Utils.Config
 loadTestConfig = unsafePerformIO $ Ref.newIORef mkConfig
 
-startTimeRef :: Ref.IORef POSIXTime
-startTimeRef = unsafePerformIO $ do 
-  curTime <- getPOSIXTime
-  Ref.newIORef curTime
+loadStopRef :: Ref.IORef Bool
+loadStopRef = unsafePerformIO $ Ref.newIORef False
 
 type WithLatency a = (a,POSIXTime)
 
@@ -117,10 +135,8 @@ runRequestParallely sessionCount sessionTemplate = do
 
 runSessionForever :: SB.SessionTemplate -> Client.Manager -> [ResponseAndLatency] -> IO [ResponseAndLatency]
 runSessionForever sessionTemplate manager acc = do
-  startTime <- Ref.readIORef startTimeRef
-  currentTime <- getPOSIXTime
-  timeToRun <- Utils.timeToRun <$> Ref.readIORef loadTestConfig
-  if ((Utils.fromDiffTimeToSeconds $ currentTime - startTime) >= (Utils.toPico timeToRun))
+  shouldStop <- Ref.readIORef loadStopRef
+  if shouldStop
     then pure acc
     else do
       res <- runRequestSeqentially manager sessionTemplate
