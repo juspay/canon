@@ -102,16 +102,6 @@ instance Monoid LoadReport where
       , requestBuildErrorCount = Just 0
       }
 
--- runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
--- runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate acc = do
---   currentTime <- getPOSIXTime
---   if (Utils.fromDiffTimeToSeconds $ currentTime - intialTime) < Utils.toPico totalTimeToRun
---     then do
---       res <- loadRunner numberOfParallelThreads sessionTemplate
---       runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate (acc <> res)
---     else do
---       pure acc
-
 loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
 loadRunner sessionCount sessionTemplate = do
   response <- withLatency $! runRequestParallely sessionCount sessionTemplate
