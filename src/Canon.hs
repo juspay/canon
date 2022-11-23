@@ -64,7 +64,6 @@ controller initialTime =
     timer = CM.forever $ do
       timeToRun <- Utils.timeToRun <$> Ref.readIORef loadTestConfig
       currentTime <- getPOSIXTime
-      print $ currentTime
       let isTimeOver = (Utils.fromDiffTimeToSeconds $ currentTime - initialTime) >= (Utils.toPico timeToRun)
       CM.when isTimeOver $ (Ref.writeIORef loadStopRef True) *> Ex.throwIO Completed
       threadDelay $ Utils.toMicroFromSec 1
