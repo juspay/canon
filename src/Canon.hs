@@ -28,32 +28,37 @@ import qualified Utils as Utils
 mkConfig :: Utils.Config
 mkConfig =
   Utils.Config
-    { numberOfThreads = 1
-    , timeToRun = 1
-    , pathOfTemplate = "/Users/shubhanshumani/loadtest/load/src/api_config.json"
+    { numberOfThreads = 100
+    , timeToRun = 30
+    , pathOfTemplate = "/Users/shubhanshumani/loadtest/canon/src/api_config.json"
     , responseTimeoutInSeconds = 15
-    , verbose = True
+    , verbose = False
     }
 
 main :: HasCallStack => IO ()
 main = do
   res <- BS.readFile $ Utils.pathOfTemplate config
-  currentTime <- getPOSIXTime
+  -- currentTime <- getPOSIXTime
   let sessionTemplate = Utils.fromRightErr $ SB.loadSessionTemplate res
-  finalResult <- runLoadTillGivenTime currentTime sessionCount timeInSeconds sessionTemplate mempty
+  finalResult <- loadRunner sessionCount sessionTemplate
   errCount <- Ref.readIORef apiErrorCounter
   requestBuildErrCount <- Ref.readIORef RB.buildRequestErrorCounter
   print $ show $ finalResult{apiExecutionErrorCount = Just errCount, requestBuildErrorCount = Just requestBuildErrCount}
   where
     config = mkConfig
     sessionCount = Utils.numberOfThreads config
-    timeInSeconds = Utils.timeToRun config
+    -- timeInSeconds = Utils.timeToRun config
 
 apiErrorCounter :: Ref.IORef Int
 apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
 
 loadTestConfig :: Ref.IORef Utils.Config
 loadTestConfig = unsafePerformIO $ Ref.newIORef mkConfig
+
+startTimeRef :: Ref.IORef POSIXTime
+startTimeRef = unsafePerformIO $ do 
+  curTime <- getPOSIXTime
+  Ref.newIORef curTime
 
 type WithLatency a = (a,POSIXTime)
 
@@ -97,35 +102,43 @@ instance Monoid LoadReport where
       , requestBuildErrorCount = Just 0
       }
 
-runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
-runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate acc = do
-  currentTime <- getPOSIXTime
-  if (Utils.fromDiffTimeToSeconds $ currentTime - intialTime) < Utils.toPico totalTimeToRun
-    then do
-      res <- loadRunner numberOfParallelThreads sessionTemplate
-      runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate (acc <> res)
-    else do
-      pure acc
+-- runLoadTillGivenTime :: POSIXTime -> Int -> Int -> SB.SessionTemplate -> LoadReport -> IO LoadReport
+-- runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate acc = do
+--   currentTime <- getPOSIXTime
+--   if (Utils.fromDiffTimeToSeconds $ currentTime - intialTime) < Utils.toPico totalTimeToRun
+--     then do
+--       res <- loadRunner numberOfParallelThreads sessionTemplate
+--       runLoadTillGivenTime intialTime numberOfParallelThreads totalTimeToRun sessionTemplate (acc <> res)
+--     else do
+--       pure acc
 
 loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
 loadRunner sessionCount sessionTemplate = do
-  requestsForSession <- makeSessions sessionCount sessionTemplate
-  response <- withLatency $! runRequestParallely requestsForSession
+  response <- withLatency $! runRequestParallely sessionCount sessionTemplate
   return $ generateReport (fst response) (snd response)
 
-makeSessions :: Int -> SB.SessionTemplate ->  IO [SB.NormalisedSession]
-makeSessions cnt sessionTemplate = sequence $! generate <$> [1..cnt]
-  where
-    generate _ = SB.generateNewSession sessionTemplate
+runRequestParallely :: Int -> SB.SessionTemplate -> IO [[ResponseAndLatency]]
+runRequestParallely sessionCount sessionTemplate = do
+  forConcurrently [1..sessionCount] (\_ -> do 
+    responseTimeout <- Utils.responseTimeoutInSeconds <$> Ref.readIORef loadTestConfig
+    manager <- Client.newManager $ tlsManagerSettings {Client.managerResponseTimeout = Client.responseTimeoutMicro $ Utils.toMicroFromSec responseTimeout}
+    runSessionForever sessionTemplate manager [])
 
-runRequestParallely :: [SB.NormalisedSession] -> IO [[ResponseAndLatency]]
-runRequestParallely normalSessions = do
-  mapConcurrently runRequestSeqentially normalSessions
 
-runRequestSeqentially :: SB.NormalisedSession -> IO [ResponseAndLatency]
-runRequestSeqentially normalSession = do
-  responseTimeout <- Utils.responseTimeoutInSeconds <$> Ref.readIORef loadTestConfig
-  manager <- Client.newManager $ tlsManagerSettings {Client.managerResponseTimeout = Client.responseTimeoutMicro $ Utils.toMicroFromSec responseTimeout}
+runSessionForever :: SB.SessionTemplate -> Client.Manager -> [ResponseAndLatency] -> IO [ResponseAndLatency]
+runSessionForever sessionTemplate manager acc = do
+  startTime <- Ref.readIORef startTimeRef
+  currentTime <- getPOSIXTime
+  timeToRun <- Utils.timeToRun <$> Ref.readIORef loadTestConfig
+  if ((Utils.fromDiffTimeToSeconds $ currentTime - startTime) >= (Utils.toPico timeToRun))
+    then pure acc
+    else do
+      res <- runRequestSeqentially manager sessionTemplate
+      runSessionForever sessionTemplate manager (acc ++ res)
+
+runRequestSeqentially :: Client.Manager -> SB.SessionTemplate -> IO [ResponseAndLatency]
+runRequestSeqentially manager sessionTemplate = do
+  normalSession <- SB.generateNewSession sessionTemplate
   let sessionApiDataList = SB.generatedApiData normalSession
   let placeholderMapperCount = SB.numberOfMappingPresent (SB.normalisedPlaceholder normalSession)
   executeApiTemplate manager (SB.normalisedPlaceholder normalSession) placeholderMapperCount sessionApiDataList []
