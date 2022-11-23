@@ -13,7 +13,6 @@
     "order-create",
     "txns",
     "payStart",
-    "payResponse",
     "orderStatus"
   ],
   "api": {
