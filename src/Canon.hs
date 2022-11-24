@@ -22,10 +22,8 @@ import qualified Network.HTTP.Types as Client
 import           Network.HTTP.Client.TLS (tlsManagerSettings)
 import qualified RequestBuilder as RB
 import qualified SessionBuilder as SB
-import           System.IO.Unsafe (unsafePerformIO)
 import qualified Utils as Utils
 import           Control.Concurrent (forkIO,myThreadId,threadDelay)
-
 
 mkConfig :: Utils.Config
 mkConfig =
@@ -37,28 +35,36 @@ mkConfig =
     , verbose = False
     }
 
+type CanonRefs = (Ref.IORef Utils.Config,Ref.IORef Int,Ref.IORef Bool)
+
 main :: HasCallStack => IO ()
 main = do
+  canonRefs@(_,apiErrorCounter,_) <- initCanonRef
   res <- BS.readFile $ Utils.pathOfTemplate config
   currentTime <- getPOSIXTime
   let sessionTemplate = Utils.fromRightErr $ SB.loadSessionTemplate res
-  runController currentTime
-  finalResult <- loadRunner sessionCount sessionTemplate
+  runController canonRefs currentTime
+  finalResult <- loadRunner canonRefs sessionCount sessionTemplate
   errCount <- Ref.readIORef apiErrorCounter
   requestBuildErrCount <- Ref.readIORef RB.buildRequestErrorCounter
   print $ show $ finalResult{apiExecutionErrorCount = Just errCount, requestBuildErrorCount = Just requestBuildErrCount}
   where
     config = mkConfig
     sessionCount = Utils.numberOfThreads config
-    runController currentTime = CM.void . forkIO $ controller currentTime
+    runController refs currentTime = CM.void . forkIO $ controller refs currentTime
+    initCanonRef = do
+      configRef <- Ref.newIORef mkConfig
+      apiErrorRef <- Ref.newIORef 0
+      loadStopRef <- Ref.newIORef False
+      pure (configRef,apiErrorRef,loadStopRef)
 
 data Completed = Completed
   deriving (Show)
 
 instance Ex.Exception Completed
 
-controller :: POSIXTime -> IO ()
-controller initialTime =
+controller :: CanonRefs -> POSIXTime -> IO ()
+controller (loadTestConfig,_,loadStopRef) initialTime =
   CM.void $ Ex.catch timer (\(_e ::Completed) -> (putStrLn "Generating Report...") *> myThreadId)
   where 
     timer = CM.forever $ do
@@ -67,15 +73,6 @@ controller initialTime =
       let isTimeOver = (Utils.fromDiffTimeToSeconds $ currentTime - initialTime) >= (Utils.toPico timeToRun)
       CM.when isTimeOver $ (Ref.writeIORef loadStopRef True) *> Ex.throwIO Completed
       threadDelay $ Utils.toMicroFromSec 1
-
-apiErrorCounter :: Ref.IORef Int
-apiErrorCounter = unsafePerformIO $ Ref.newIORef 0
-
-loadTestConfig :: Ref.IORef Utils.Config
-loadTestConfig = unsafePerformIO $ Ref.newIORef mkConfig
-
-loadStopRef :: Ref.IORef Bool
-loadStopRef = unsafePerformIO $ Ref.newIORef False
 
 type WithLatency a = (a,POSIXTime)
 
@@ -119,70 +116,87 @@ instance Monoid LoadReport where
       , requestBuildErrorCount = Just 0
       }
 
-loadRunner :: Int -> SB.SessionTemplate -> IO LoadReport
-loadRunner sessionCount sessionTemplate = do
-  response <- withLatency $! runRequestParallely sessionCount sessionTemplate
+loadRunner :: CanonRefs -> Int -> SB.SessionTemplate -> IO LoadReport
+loadRunner refs sessionCount sessionTemplate = do
+  response <- withLatency $! runRequestParallely refs sessionCount sessionTemplate
   return $ generateReport (fst response) (snd response)
 
-runRequestParallely :: Int -> SB.SessionTemplate -> IO [[ResponseAndLatency]]
-runRequestParallely sessionCount sessionTemplate = do
+runRequestParallely :: CanonRefs -> Int -> SB.SessionTemplate -> IO [[ResponseAndLatency]]
+runRequestParallely refs@(loadTestConfig,_,_) sessionCount sessionTemplate = do
   forConcurrently [1..sessionCount] (\_ -> do 
     responseTimeout <- Utils.responseTimeoutInSeconds <$> Ref.readIORef loadTestConfig
     manager <- Client.newManager $ tlsManagerSettings {Client.managerResponseTimeout = Client.responseTimeoutMicro $ Utils.toMicroFromSec responseTimeout}
-    runSessionForever sessionTemplate manager [])
+    runSessionForever refs sessionTemplate manager [])
 
 
-runSessionForever :: SB.SessionTemplate -> Client.Manager -> [ResponseAndLatency] -> IO [ResponseAndLatency]
-runSessionForever sessionTemplate manager acc = do
+runSessionForever :: CanonRefs
+  -> SB.SessionTemplate 
+  -> Client.Manager 
+  -> [ResponseAndLatency] 
+  -> IO [ResponseAndLatency]
+runSessionForever refs@(_,_,loadStopRef) sessionTemplate manager acc = do
   shouldStop <- Ref.readIORef loadStopRef
   if shouldStop
     then pure acc
     else do
-      res <- runRequestSeqentially manager sessionTemplate
-      runSessionForever sessionTemplate manager (acc ++ res)
+      res <- runRequestSeqentially refs manager sessionTemplate
+      runSessionForever refs sessionTemplate manager (acc ++ res)
 
-runRequestSeqentially :: Client.Manager -> SB.SessionTemplate -> IO [ResponseAndLatency]
-runRequestSeqentially manager sessionTemplate = do
+runRequestSeqentially :: CanonRefs -> Client.Manager -> SB.SessionTemplate -> IO [ResponseAndLatency]
+runRequestSeqentially refs manager sessionTemplate = do
   normalSession <- SB.generateNewSession sessionTemplate
   let sessionApiDataList = SB.generatedApiData normalSession
   let placeholderMapperCount = SB.numberOfMappingPresent (SB.normalisedPlaceholder normalSession)
-  executeApiTemplate manager (SB.normalisedPlaceholder normalSession) placeholderMapperCount sessionApiDataList []
+  executeApiTemplate refs manager (SB.normalisedPlaceholder normalSession) placeholderMapperCount sessionApiDataList []
 
-executeApiTemplate :: Client.Manager -> HMap.HashMap Text.Text SB.PlaceHolder -> Int -> [(Text.Text,SB.ApiTemplate)] -> [ResponseAndLatency] -> IO [ResponseAndLatency]
-executeApiTemplate _ _ _ [] acc = pure acc
-executeApiTemplate manager placeholder _ [apiData] acc = do
-  eitherResponseWithLatency <- buildAndRunRequest placeholder apiData manager
+executeApiTemplate :: CanonRefs 
+  -> Client.Manager 
+  -> HMap.HashMap Text.Text SB.PlaceHolder 
+  -> Int 
+  -> [(Text.Text,SB.ApiTemplate)] 
+  -> [ResponseAndLatency] 
+  -> IO [ResponseAndLatency]
+executeApiTemplate _ _ _ _ [] acc = pure acc
+executeApiTemplate refs manager placeholder _ [apiData] acc = do
+  eitherResponseWithLatency <- buildAndRunRequest refs placeholder apiData manager
   case eitherResponseWithLatency of
     Right responseWithLatency -> pure $ acc ++ [responseWithLatency]
     Left err -> do
-      printLog $ show err
+      printLog refs $ show err
       pure $ acc
-executeApiTemplate manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do
-  eitherResponseWithLatency <- buildAndRunRequest placeholder (apiLabel,apiData) manager
+executeApiTemplate refs manager placeholder mappingCount ((apiLabel,apiData) : xs) acc = do
+  eitherResponseWithLatency <- buildAndRunRequest refs placeholder (apiLabel,apiData) manager
   case eitherResponseWithLatency of
       Right (response,latency) -> do
         (updatedPlaceHolder,mappingCtr) <-
           if mappingCount > 0
             then do
-              updPlaceholder <- decodeResponseToValue placeholder apiLabel (Client.responseBody response)
+              updPlaceholder <- decodeResponseToValue refs placeholder apiLabel (Client.responseBody response)
               let updatedMapperCount = SB.numberOfMappingPresent updPlaceholder
               pure (updPlaceholder,updatedMapperCount)
             else pure (placeholder,mappingCount)
-        executeApiTemplate manager updatedPlaceHolder mappingCtr xs (acc ++ [(response,latency)])
+        executeApiTemplate refs manager updatedPlaceHolder mappingCtr xs (acc ++ [(response,latency)])
       Left err -> do
-        printLog $ show err
-        executeApiTemplate manager placeholder mappingCount xs acc
+        printLog refs $ show err
+        executeApiTemplate refs manager placeholder mappingCount xs acc
 
-buildAndRunRequest :: HMap.HashMap Text.Text SB.PlaceHolder -> (Text.Text,SB.ApiTemplate) -> Client.Manager -> IO (Either SB.ConversionError ResponseAndLatency)
-buildAndRunRequest placeholder apiTemplate manager = runEitherT $ do
+buildAndRunRequest :: CanonRefs 
+  -> HMap.HashMap Text.Text SB.PlaceHolder 
+  -> (Text.Text,SB.ApiTemplate) 
+  -> Client.Manager 
+  -> IO (Either SB.ConversionError ResponseAndLatency)
+buildAndRunRequest refs placeholder apiTemplate manager = runEitherT $ do
   req <- newEitherT $! RB.buildRequest placeholder apiTemplate
-  responseWithLatency <- newEitherT $ runRequest manager req
+  responseWithLatency <- newEitherT $ runRequest refs manager req
   pure responseWithLatency
 
-runRequest :: Client.Manager -> Client.Request -> IO (Either SB.ConversionError ResponseAndLatency)
-runRequest manager req = do
+runRequest :: CanonRefs 
+  -> Client.Manager 
+  -> Client.Request 
+  -> IO (Either SB.ConversionError ResponseAndLatency)
+runRequest refs@(_,apiErrorCounter,_) manager req = do
     res <- either actOnApiError (pure . Right) =<< (Ex.try $! (withLatency $! Client.httpLbs req manager))
-    printLog $ show res
+    printLog refs $ show res
     pure res
   where
     actOnApiError err = do
@@ -190,13 +204,17 @@ runRequest manager req = do
       pure . Left $ SB.HttpException err
 
 -- TODO : Rework this
-decodeResponseToValue :: HMap.HashMap Text.Text SB.PlaceHolder -> Text.Text -> BSL.ByteString ->  IO (HMap.HashMap Text.Text SB.PlaceHolder)
-decodeResponseToValue placeholder apiLabel response = do
+decodeResponseToValue :: CanonRefs 
+  -> HMap.HashMap Text.Text SB.PlaceHolder 
+  -> Text.Text 
+  -> BSL.ByteString 
+  -> IO (HMap.HashMap Text.Text SB.PlaceHolder)
+decodeResponseToValue refs placeholder apiLabel response = do
   case eitherDecodeStrict $ BSL.toStrict response of
     Right (val :: Value) -> do
       pure $ HMap.map (updateValuesInPlaceholder (apiLabel,val)) placeholder
     Left err -> do
-      printLog $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
+      printLog refs $ (Text.unpack apiLabel) <> " Failed to decode to a JSON" <>  err
       pure placeholder
 
 updateValuesInPlaceholder :: (Text.Text , Value) -> SB.PlaceHolder -> SB.PlaceHolder
@@ -236,8 +254,8 @@ withLatency action = do
   tock <- getPOSIXTime
   return $ (res, tock-tick)
 
-printLog :: (Show a) => a -> IO ()
-printLog mssg = do
+printLog :: (Show a) => CanonRefs -> a -> IO ()
+printLog (loadTestConfig,_,_) mssg = do
   isVerbose <- Utils.verbose <$> Ref.readIORef loadTestConfig
   if isVerbose
     then print mssg
