@@ -24,11 +24,12 @@ import qualified RequestBuilder as RB
 import qualified SessionBuilder as SB
 import qualified Utils as Utils
 import           Control.Concurrent (forkIO,myThreadId,threadDelay)
+import qualified System.Posix.Signals                      as OS
 
 mkConfig :: Utils.Config
 mkConfig =
   Utils.Config
-    { numberOfThreads = 10
+    { numberOfThreads = 20
     , timeToRun = 30
     , pathOfTemplate = "/Users/shubhanshumani/loadtest/canon/src/api_config.json"
     , responseTimeoutInSeconds = 15
@@ -70,6 +71,7 @@ controller (loadTestConfig,_,loadStopRef) initialTime =
     timer = CM.forever $ do
       timeToRun <- Utils.timeToRun <$> Ref.readIORef loadTestConfig
       currentTime <- getPOSIXTime
+      _ <- OS.installHandler OS.sigINT (OS.CatchOnce ((Ref.writeIORef loadStopRef True) *> Ex.throwIO Completed)) Nothing
       let isTimeOver = (Utils.fromDiffTimeToSeconds $ currentTime - initialTime) >= (Utils.toPico timeToRun)
       CM.when isTimeOver $ (Ref.writeIORef loadStopRef True) *> Ex.throwIO Completed
       threadDelay $ Utils.toMicroFromSec 1
