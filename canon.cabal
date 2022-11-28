@@ -53,6 +53,7 @@ library
     , text
     , time
     , transformers-either
+    , unix
     , unordered-containers
     , uuid
   default-language: Haskell2010
@@ -84,6 +85,7 @@ executable canon-exe
     , text
     , time
     , transformers-either
+    , unix
     , unordered-containers
     , uuid
   default-language: Haskell2010
@@ -116,6 +118,7 @@ test-suite canon-test
     , text
     , time
     , transformers-either
+    , unix
     , unordered-containers
     , uuid
   default-language: Haskell2010
