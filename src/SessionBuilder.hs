@@ -205,9 +205,8 @@ runCommand = \case
 randomInt :: IO Word8
 randomInt = makeNatual <$> randomIO
   where
-    makeNatual a | a < 0 = (a * (-1)) `mod` 10000
-                 | a == 0 = 1
-                 | otherwise = a `mod` 10000
+    makeNatual a | a == 0 = 1
+                 | otherwise = a
 
 randomUUID :: IO Text
 randomUUID =
